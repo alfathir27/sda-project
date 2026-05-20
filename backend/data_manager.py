@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import numpy as np
 
-from qm9_loader import parse_xyz, PROPERTIES_NAMES
+from qm9_loader import parse_xyz, PROPERTIES_NAMES, resolve_names_batch, _load_names_cache
 from graph_processor import infer_bonds, compute_2d_layout
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "qm9_raw"
@@ -23,6 +23,12 @@ class QM9Dataset:
                 self.molecules = pickle.load(f)
             for idx, mol in enumerate(self.molecules):
                 self._id_to_idx[mol['mol_id']] = idx
+            # Apply cached names from PubChem (may have been resolved separately)
+            names_cache = _load_names_cache()
+            if names_cache:
+                for mol in self.molecules:
+                    if not mol.get('name') and mol.get('smiles') and mol['smiles'] in names_cache:
+                        mol['name'] = names_cache[mol['smiles']]
             return
 
         files = sorted(RAW_DIR.glob("*.xyz"))[:MAX_MOLECULES]
@@ -57,6 +63,8 @@ class QM9Dataset:
                     "mol_id": mol['mol_id'],
                     "n_atoms": mol['n_atoms'],
                     "formula": self._formula(mol['atoms']),
+                    "name": mol.get('name'),
+                    "smiles": mol.get('smiles'),
                     "nodes": nodes,
                     "edges": edges,
                     "properties": mol['properties'],
@@ -84,6 +92,8 @@ class QM9Dataset:
                 "mol_id": mol['mol_id'],
                 "n_atoms": mol['n_atoms'],
                 "formula": mol['formula'],
+                "name": mol.get('name'),
+                "smiles": mol.get('smiles'),
                 "mu": mol['properties'].get('mu_Debye'),
                 "gap": mol['properties'].get('gap_Hartree'),
             })

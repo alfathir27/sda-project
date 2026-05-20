@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List
 from data_manager import dataset
+from qm9_loader import resolve_names_batch
 
 app = FastAPI(title="QM9 Graph API")
 
@@ -48,6 +49,13 @@ def compare_molecules(req: CompareRequest):
 @app.get("/properties/stats")
 def get_stats():
     return dataset.stats()
+
+
+@app.post("/resolve-names")
+def resolve_names():
+    cache = resolve_names_batch(dataset.molecules)
+    resolved = sum(1 for m in dataset.molecules if m.get('name'))
+    return {"resolved": resolved, "total": len(dataset.molecules), "unique_smiles": len(cache)}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")

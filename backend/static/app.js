@@ -42,16 +42,16 @@ async function loadMolecules() {
 function renderList() {
   const q = document.getElementById('search-input').value.toLowerCase();
   const filtered = q
-    ? molecules.filter(m => m.mol_id.toLowerCase().includes(q) || m.formula.toLowerCase().includes(q))
+    ? molecules.filter(m => m.mol_id.toLowerCase().includes(q) || m.formula.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q)))
     : molecules;
 
   const el = document.getElementById('mol-list');
   el.innerHTML = filtered.map(m => `
     <button class="mol-item ${currentMol && currentMol.mol_id === m.mol_id ? 'active' : ''}"
             onclick="selectMol('${m.mol_id}')">
-      <span class="mol-id">${m.mol_id}</span>
+      <span class="mol-id">${m.name || m.mol_id}</span>
       <span class="mol-formula">${m.formula}</span>
-      <div class="mol-meta">${m.n_atoms} atoms &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
+      <div class="mol-meta">${m.name ? m.mol_id : ''} ${m.name ? '·' : ''} ${m.n_atoms} atoms &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
     </button>
   `).join('');
 }
@@ -91,9 +91,9 @@ function showView(view) {
 // --- Render molecule ---
 function renderMolecule() {
   if (!currentMol) return;
-  document.getElementById('mol-title').textContent = currentMol.mol_id;
+  document.getElementById('mol-title').textContent = currentMol.name || currentMol.mol_id;
   document.getElementById('mol-subtitle').textContent =
-    `${currentMol.formula} · ${currentMol.n_atoms} atoms · ${currentMol.edges.length} bonds`;
+    `${currentMol.name ? currentMol.mol_id + ' · ' : ''}${currentMol.formula} · ${currentMol.n_atoms} atoms · ${currentMol.edges.length} bonds${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
 
   const btn = document.getElementById('btn-add-compare');
   const inCompare = compareIds.includes(currentMol.mol_id);
@@ -220,7 +220,7 @@ async function renderCompare() {
   grid.innerHTML = mols.map(m => `
     <div class="compare-mol">
       <div class="mol-header">
-        <div><strong>${m.mol_id}</strong><br><span class="text-muted">${m.formula} · ${m.n_atoms} atoms</span></div>
+        <div><strong>${m.name || m.mol_id}</strong><br><span class="text-muted">${m.name ? m.mol_id + ' · ' : ''}${m.formula} · ${m.n_atoms} atoms</span></div>
       </div>
       <div id="cy-${m.mol_id}" class="cy-container"></div>
     </div>

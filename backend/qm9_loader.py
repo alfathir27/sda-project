@@ -1,5 +1,10 @@
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Dict
+import json
+import time
+import urllib.request
+import urllib.parse
+import urllib.error
 import numpy as np
 
 COVALENT_RADII = {
@@ -8,6 +13,120 @@ COVALENT_RADII = {
     'B': 0.84, 'Li': 1.28, 'Na': 1.66, 'Mg': 1.41, 'Al': 1.21,
     'K': 2.03, 'Ca': 1.76, 'Fe': 1.32, 'Cu': 1.32, 'Zn': 1.22,
 }
+
+SMILES_TO_NAME = {
+    'C': 'Methane', 'O': 'Water', 'N': 'Ammonia',
+    'C#C': 'Acetylene', 'C#N': 'Hydrogen Cyanide',
+    'C=C': 'Ethylene', 'C=O': 'Formaldehyde',
+    'CC': 'Ethane', 'CO': 'Methanol', 'CN': 'Methylamine', 'CF': 'Fluoromethane',
+    'CC=C': 'Propene', 'CC#C': 'Propyne', 'CCC': 'Propane',
+    'C=CC': 'Propene', 'CCO': 'Ethanol', 'CCN': 'Ethylamine', 'CCF': 'Fluoroethane',
+    'COC': 'Dimethyl Ether', 'CNC': 'Dimethylamine',
+    'O=CO': 'Formic Acid', 'O=C=O': 'Carbon Dioxide', 'N#CC': 'Acetonitrile',
+    'CC=O': 'Acetaldehyde', 'CCO=C': 'Dimethyl Ether',
+    'CCCO': '1-Propanol', 'CCNC': 'Ethylmethylamine',
+    'CCCC': 'Butane', 'CC=CC': '2-Butene', 'CC#CC': '2-Butyne',
+    'C=CC=C': '1,3-Butadiene', 'C1=CC=CC=C1': 'Benzene',
+    'c1ccccc1': 'Benzene', 'C1CCCCC1': 'Cyclohexane',
+    'C1CCCC1': 'Cyclopentane', 'C1CCC1': 'Cyclobutane', 'C1CC1': 'Cyclopropane',
+    'O=C(O)C': 'Acetic Acid', 'O=CC': 'Acetaldehyde',
+    'O=CN': 'Formamide', 'O=CNC': 'N-Methylformamide',
+    'CC(=O)C': 'Acetone', 'CC(=O)O': 'Acetic Acid',
+    'CC(=O)N': 'Acetamide', 'C#CC#C': 'Diacetylene',
+    'S': 'Hydrogen Sulfide', 'CS': 'Methanethiol', 'CCS': 'Ethanethiol',
+    'C=S': 'Thioformaldehyde', 'OCS': 'Thioformaldehyde',
+    'F': 'Hydrogen Fluoride', 'FCF': 'Difluoromethane',
+    'O1CC1': 'Ethylene Oxide', 'C1OCC1': 'Oxetane',
+    'N#N': 'Dinitrogen', 'O=O': 'Dioxygen',
+    'C(=O)(O)O': 'Carbonic Acid', 'NC=O': 'Formamide',
+    'NCN': 'Urea', 'NC(=O)N': 'Urea',
+    'CC(=O)OC': 'Methyl Acetate', 'CCOC': 'Ethyl Methyl Ether',
+    'C=NO': 'Formaldoxime', 'ON=O': 'Nitrous Acid',
+    'O=N=O': 'Nitrogen Dioxide', 'N=O': 'Nitric Oxide',
+    'C(F)(F)F': 'Trifluoromethane', 'C(Cl)Cl': 'Dichloromethane',
+    'C(Br)Br': 'Dibromomethane',
+    'CC(=O)CC': '2-Butanone', 'CCC(=O)C': '2-Butanone',
+    'CCCO': '1-Propanol', 'CC(O)C': '2-Propanol',
+    'C1COCC1': 'Tetrahydrofuran', 'C1CCNC1': 'Pyrrolidine',
+    'C1CCOC1': 'Tetrahydrofuran',
+    'c1ccncc1': 'Pyridine', 'c1ccc[nH]c1': 'Pyrrole',
+    'c1ccco1': 'Furan', 'c1cc[nH]c1': 'Pyrrole',
+    'c1ccsc1': 'Thiophene', 'c1ccnc1': 'Pyridine',
+    'C1=CN=CC=C1': 'Pyridine',
+}
+
+
+def smiles_to_name(smiles: str) -> Optional[str]:
+    return SMILES_TO_NAME.get(smiles)
+
+
+NAMES_CACHE_PATH = Path(__file__).parent.parent / "data" / "qm9_processed" / "names_cache.json"
+
+
+def _load_names_cache() -> Dict[str, str]:
+    if NAMES_CACHE_PATH.exists():
+        with open(NAMES_CACHE_PATH, 'r') as f:
+            return json.load(f)
+    return {}
+
+
+def _save_names_cache(cache: Dict[str, str]):
+    NAMES_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(NAMES_CACHE_PATH, 'w') as f:
+        json.dump(cache, f, indent=2)
+
+
+def _pubchem_resolve(smiles: str) -> Optional[str]:
+    """Resolve a single SMILES to IUPAC name via PubChem PUG REST API."""
+    try:
+        encoded = urllib.parse.quote(smiles, safe='')
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded}/property/IUPACName,Title/JSON"
+        req = urllib.request.Request(url, headers={"User-Agent": "QM9GraphExplorer/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        props = data["PropertyTable"]["Properties"][0]
+        return props.get("IUPACName") or props.get("Title")
+    except Exception:
+        return None
+
+
+def resolve_names_batch(molecules: List[Dict], delay: float = 0.2) -> Dict[str, str]:
+    """Resolve names for molecules that don't have one yet. Returns updated cache."""
+    cache = _load_names_cache()
+    to_resolve = []
+    for mol in molecules:
+        smiles = mol.get("smiles")
+        if not smiles:
+            continue
+        if mol.get("name"):
+            cache[smiles] = mol["name"]
+            continue
+        if smiles in cache:
+            mol["name"] = cache[smiles]
+            continue
+        to_resolve.append(mol)
+
+    if not to_resolve:
+        return cache
+
+    print(f"Resolving names for {len(to_resolve)} molecules via PubChem API...")
+    for i, mol in enumerate(to_resolve):
+        smiles = mol["smiles"]
+        if smiles in cache:
+            mol["name"] = cache[smiles]
+            continue
+        name = _pubchem_resolve(smiles)
+        if name:
+            mol["name"] = name
+            cache[smiles] = name
+        if (i + 1) % 50 == 0:
+            print(f"  Resolved {i + 1}/{len(to_resolve)}...")
+            _save_names_cache(cache)
+        time.sleep(delay)
+
+    _save_names_cache(cache)
+    print(f"Done. Resolved {len(cache)} unique SMILES names total.")
+    return cache
 
 PROPERTIES_NAMES = [
     "tag", "index", "A_GHz", "B_GHz", "C_GHz", "mu_Debye", "alpha_Bohr3",
@@ -51,10 +170,21 @@ def parse_xyz(path: Path) -> dict:
 
     coords = np.array(coords)
 
+    # Extract SMILES from the file (3rd line from end, first token)
+    smiles = None
+    name = None
+    if len(lines) >= n_atoms + 5:
+        smiles_line = lines[n_atoms + 3].split()
+        if smiles_line:
+            smiles = smiles_line[0]
+            name = smiles_to_name(smiles)
+
     return {
         "mol_id": path.stem,
         "n_atoms": n_atoms,
         "atoms": atoms,
         "coords": coords,
         "properties": props,
+        "smiles": smiles,
+        "name": name,
     }
