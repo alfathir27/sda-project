@@ -1,0 +1,16 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+data/qm9_raw/
+data/qm9_processed/
+data/dsgdb9nsd.xyz.tar.bz2
+*.egg-info/
+.vite/
+backend/.gitignore
+backend/.python-version
+backend/README.md
+backend/pyproject.toml
+backend/uv.lock
+package.json
+package-lock.json

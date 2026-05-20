@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QM9 Graph Explorer</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://unpkg.com/cytoscape@3.32.0/dist/cytoscape.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+        <h1>QM9 Graph Explorer</h1>
+      </div>
+      <button id="btn-compare" class="btn btn-outline" onclick="toggleCompare()">
+        Compare <span id="compare-badge" class="badge" style="display:none">0</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <div class="card">
+        <div class="card-title">Molecule Library</div>
+        <input id="search-input" type="text" placeholder="Search by ID or formula..." oninput="onSearch()" />
+        <div id="mol-list" class="mol-list"></div>
+        <div class="pagination">
+          <button id="btn-prev" onclick="prevPage()" disabled>&larr; Prev</button>
+          <span id="page-info">0 / 0</span>
+          <button id="btn-next" onclick="nextPage()" disabled>Next &rarr;</button>
+        </div>
+      </div>
+      <div id="compare-selection" class="card" style="display:none">
+        <div class="card-title">Selected for Compare</div>
+        <div id="compare-tags"></div>
+        <button class="btn btn-sm btn-outline" onclick="clearCompare()">Clear</button>
+      </div>
+    </aside>
+
+    <section id="content">
+      <div id="empty-state" class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+        <p>Select a molecule from the library to explore its graph and properties.</p>
+      </div>
+
+      <div id="loading-state" class="empty-state" style="display:none">
+        <div class="spinner"></div>
+        <p>Loading molecule data...</p>
+      </div>
+
+      <div id="mol-view" style="display:none">
+        <div class="mol-header">
+          <div>
+            <h2 id="mol-title"></h2>
+            <p id="mol-subtitle" class="text-muted"></p>
+          </div>
+          <button id="btn-add-compare" class="btn btn-outline" onclick="toggleCompareId()">
+            + Add to compare
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-row">
+            <span class="card-title" style="margin:0">2D Graph</span>
+            <span class="text-muted text-sm">Scroll to zoom &middot; Drag to pan</span>
+          </div>
+          <div id="cy-container" class="cy-container"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Properties</div>
+          <div id="props-grid" class="props-grid"></div>
+        </div>
+      </div>
+
+      <div id="compare-view" style="display:none">
+        <div class="mol-header">
+          <h2>Compare Molecules</h2>
+          <button class="btn btn-outline" onclick="toggleCompare()">Close</button>
+        </div>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
