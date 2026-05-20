@@ -8,7 +8,17 @@ Aplikasi web monolitik untuk mengeksplorasi dataset QM9 dalam bentuk graf 2D int
 
 ### Sumber
 
-- **Paper**: Ramakrishnan, R., Dral, P.O., Rupp, M., & von Lilienfeld, O.A. (2014). *Quantum chemistry structures and properties of 134 kilo molecules.* Scientific Data, 1, 140022.
+Proyek ini mengacu pada paper:
+
+> **Adaptive edge-aware graph convolutional with multi-task learning for simultaneous prediction of material properties**
+>
+> Scopus: https://www.scopus.com/pages/publications/105028524571?origin=resultslist
+
+Paper tersebut menggunakan dataset QM9 untuk prediksi properti material secara simultan menggunakan graph neural network. Implementasi di proyek ini **berfokus pada visualisasi graf molekul** — menampilkan struktur graf 2D interaktif, inferensi ikatan, dan eksplorasi properti — bukan pada model prediktif.
+
+Dataset QM9 sendiri dipublikasikan oleh:
+
+- Ramakrishnan, R., Dral, P.O., Rupp, M., & von Lilienfeld, O.A. (2014). *Quantum chemistry structures and properties of 134 kilo molecules.* Scientific Data, 1, 140022.
 - **Download**: https://ndownloader.figshare.com/files/3195389 (`dsgdb9nsd.xyz.tar.bz2`)
 
 ### Format File
