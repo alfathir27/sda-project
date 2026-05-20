@@ -1,4 +1,4 @@
-# QM9 Molecular Graph Explorer
+# Pengembangan Aplikasi Web Interaktif untuk Visualisasi Graf Molekul dan Eksplorasi Properti Kuantum pada Dataset QM9
 
 Aplikasi web monolitik untuk mengeksplorasi dataset QM9 dalam bentuk graf 2D interaktif. Backend Python (FastAPI) memproses data molekul dan menyajikan API + static files, frontend vanilla HTML/CSS/JS menampilkan visualisasi graf menggunakan Cytoscape.js.
 

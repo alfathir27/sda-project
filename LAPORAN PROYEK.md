@@ -1,6 +1,6 @@
 # LAPORAN PROYEK
 
-# Visualisasi Graf Molekul Dataset QM9 Berbasis Web Interaktif
+# Pengembangan Aplikasi Web Interaktif untuk Visualisasi Graf Molekul dan Eksplorasi Properti Kuantum pada Dataset QM9
 
 ---
 
