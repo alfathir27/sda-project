@@ -135,6 +135,60 @@ PROPERTIES_NAMES = [
 ]
 
 
+# notasi Hill: C dulu, lalu H, sisanya alfabet. standar buat formula molekul organik
+def hill_formula(atoms: List[str]) -> str:
+    counts: Dict[str, int] = {}
+    for a in atoms:
+        counts[a] = counts.get(a, 0) + 1
+    keys = []
+    if 'C' in counts:
+        keys.append('C')
+        if 'H' in counts:
+            keys.append('H')
+        keys.extend(sorted(k for k in counts if k not in ('C', 'H')))
+    else:
+        keys = sorted(counts.keys())
+    return ''.join(f"{k}{counts[k] if counts[k] > 1 else ''}" for k in keys)
+
+
+# baca header file xyz tanpa parse koordinat. ringan, dipakai pas build index
+def parse_xyz_meta(path: Path) -> dict:
+    with open(path, 'r') as f:
+        lines = [line.strip() for line in f if line.strip()]
+    n_atoms = int(lines[0])
+
+    # parse 16 properti dari line 2 (sama seperti parse_xyz tapi tanpa coords)
+    props_line = lines[1].split()
+    props: Dict[str, Optional[float]] = {}
+    prop_keys = PROPERTIES_NAMES[1:]
+    for i, name in enumerate(prop_keys):
+        idx = i + 1
+        if idx < len(props_line):
+            try:
+                props[name] = float(props_line[idx].replace('*^', 'e'))
+            except ValueError:
+                props[name] = None
+
+    atoms = []
+    for i in range(2, 2 + n_atoms):
+        parts = lines[i].split()
+        if parts:
+            atoms.append(parts[0])
+    smiles = None
+    if len(lines) >= n_atoms + 5:
+        smiles_line = lines[n_atoms + 3].split()
+        if smiles_line:
+            smiles = smiles_line[0]
+    return {
+        "mol_id": path.stem,
+        "n_atoms": n_atoms,
+        "formula": hill_formula(atoms),
+        "smiles": smiles,
+        "name": smiles_to_name(smiles) if smiles else None,
+        "properties": props,
+    }
+
+
 def parse_xyz(path: Path) -> dict:
     with open(path, 'r') as f:
         lines = [line.strip() for line in f if line.strip()]

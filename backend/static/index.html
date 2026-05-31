@@ -24,13 +24,17 @@
     <aside id="sidebar">
       <div class="card">
         <div class="card-title">Molecule Library</div>
-        <input id="search-input" type="text" placeholder="Search by ID or formula..." oninput="onSearch()" />
+        <input id="search-input" type="text" placeholder="Cari formula (H2O), SMILES, atau ID..." oninput="onSearch()" />
+        <div id="search-meta" class="text-muted text-sm" style="margin-bottom:8px"></div>
         <div id="mol-list" class="mol-list"></div>
         <div class="pagination">
           <button id="btn-prev" onclick="prevPage()" disabled>&larr; Prev</button>
           <span id="page-info">0 / 0</span>
           <button id="btn-next" onclick="nextPage()" disabled>Next &rarr;</button>
         </div>
+        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:8px" onclick="renderFromSmiles()">
+          Render dari SMILES
+        </button>
       </div>
       <div id="compare-selection" class="card" style="display:none">
         <div class="card-title">Selected for Compare</div>

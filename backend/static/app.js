@@ -31,22 +31,35 @@ async function apiFetch(url, opts) {
 }
 
 // --- Molecule list ---
+let searchQuery = '';
+let searchTimer = null;
+
 async function loadMolecules() {
-  const data = await apiFetch(`/molecules?limit=${LIMIT}&offset=${offset}`);
-  molecules = data.items;
-  total = data.total;
+  if (searchQuery) {
+    const data = await apiFetch(`/search?q=${encodeURIComponent(searchQuery)}&limit=${LIMIT}`);
+    molecules = data.items;
+    total = data.total;
+    document.getElementById('search-meta').textContent =
+      data.total === 0
+        ? `Tidak ada hasil. Coba klik "Render dari SMILES" di bawah.`
+        : `${data.total} hasil (matched: ${data.matched_by})`;
+  } else {
+    const data = await apiFetch(`/molecules?limit=${LIMIT}&offset=${offset}`);
+    molecules = data.items;
+    total = data.total;
+    document.getElementById('search-meta').textContent = '';
+  }
   renderList();
   renderPagination();
 }
 
 function renderList() {
-  const q = document.getElementById('search-input').value.toLowerCase();
-  const filtered = q
-    ? molecules.filter(m => m.mol_id.toLowerCase().includes(q) || m.formula.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q)))
-    : molecules;
-
   const el = document.getElementById('mol-list');
-  el.innerHTML = filtered.map(m => `
+  if (molecules.length === 0) {
+    el.innerHTML = '<p class="text-muted text-sm" style="padding:8px">Tidak ada molekul.</p>';
+    return;
+  }
+  el.innerHTML = molecules.map(m => `
     <button class="mol-item ${currentMol && currentMol.mol_id === m.mol_id ? 'active' : ''}"
             onclick="selectMol('${m.mol_id}')">
       <span class="mol-id">${m.name || m.mol_id}</span>
@@ -57,16 +70,44 @@ function renderList() {
 }
 
 function renderPagination() {
-  const pages = Math.ceil(total / LIMIT);
-  const current = Math.floor(offset / LIMIT) + 1;
+  const pages = Math.max(1, Math.ceil(total / LIMIT));
+  const current = searchQuery ? 1 : Math.floor(offset / LIMIT) + 1;
   document.getElementById('page-info').textContent = `${current} / ${pages}`;
-  document.getElementById('btn-prev').disabled = offset === 0;
-  document.getElementById('btn-next').disabled = offset + LIMIT >= total;
+  document.getElementById('btn-prev').disabled = searchQuery || offset === 0;
+  document.getElementById('btn-next').disabled = searchQuery || offset + LIMIT >= total;
 }
 
 function prevPage() { if (offset > 0) { offset -= LIMIT; loadMolecules(); } }
 function nextPage() { if (offset + LIMIT < total) { offset += LIMIT; loadMolecules(); } }
-function onSearch() { renderList(); }
+
+function onSearch() {
+  searchQuery = document.getElementById('search-input').value.trim();
+  // debounce 250ms supaya gak hit server tiap keystroke
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    offset = 0;
+    loadMolecules();
+  }, 250);
+}
+
+async function renderFromSmiles() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  showView('loading');
+  try {
+    const mol = await apiFetch('/render-smiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ smiles: q }),
+    });
+    currentMol = mol;
+    renderMolecule();
+    showView('mol');
+  } catch (e) {
+    alert(`SMILES invalid: ${e.message}`);
+    showView('empty');
+  }
+}
 
 // --- Select molecule ---
 async function selectMol(id) {
@@ -122,7 +163,7 @@ function renderGraph(containerId, nodes, edges) {
     ],
     style: [
       { selector: 'node', style: {
-        'background-color': 'data(element)', 'border-color': '#334155', 'border-width': 1.5,
+        'border-color': '#334155', 'border-width': 1.5,
         width: 24, height: 24, label: 'data(label)', 'font-size': '10px',
         'text-valign': 'center', 'text-halign': 'center', color: '#1e293b',
         'text-outline-color': '#ffffff', 'text-outline-width': 2,
@@ -141,8 +182,13 @@ function renderGraph(containerId, nodes, edges) {
 
 function renderProps(containerId, props) {
   const el = document.getElementById(containerId);
-  el.innerHTML = Object.entries(props)
-    .filter(([k]) => k !== 'tag' && k !== 'index' && props[k] !== null)
+  const entries = Object.entries(props || {})
+    .filter(([k]) => k !== 'tag' && k !== 'index' && props[k] !== null && props[k] !== undefined);
+  if (entries.length === 0) {
+    el.innerHTML = '<p class="text-muted text-sm" style="grid-column:1/-1">Tidak ada data properti (graf disintesis dari SMILES).</p>';
+    return;
+  }
+  el.innerHTML = entries
     .map(([k, v]) => `
       <div class="prop-item">
         <span class="prop-label">${PROP_LABELS[k] || k}</span>

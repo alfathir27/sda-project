@@ -1,125 +1,261 @@
+"""
+QM9Dataset — lazy-load via hash map index.
+
+Strategi:
+  - Startup: load index.json (3 hash map), bukan parse semua xyz. ~100ms.
+  - Lookup: O(1) by mol_id, formula, atau smiles via index.
+  - Detail molekul: parse xyz on-demand, cache hasil di pickle (per-molekul).
+  - Cache pickle berisi dict: mol_id -> molekul lengkap (graf + properti).
+
+Ini menggantikan pendekatan lama yang pre-parse 2000 molekul ke pickle besar.
+"""
+
 import pickle
+import threading
 from pathlib import Path
 from typing import List, Dict, Optional
 import numpy as np
 
-from qm9_loader import parse_xyz, PROPERTIES_NAMES, resolve_names_batch, _load_names_cache
+from qm9_loader import (
+    parse_xyz,
+    PROPERTIES_NAMES,
+    resolve_names_batch,
+    _load_names_cache,
+    hill_formula,
+)
 from graph_processor import infer_bonds, compute_2d_layout
+from index_builder import load_index, INDEX_PATH
 
-RAW_DIR = Path(__file__).parent.parent / "data" / "qm9_raw"
-CACHE_PATH = Path(__file__).parent.parent / "data" / "qm9_processed" / "cache.pkl"
-MAX_MOLECULES = 2000
+ROOT = Path(__file__).parent.parent
+RAW_DIR = ROOT / "data" / "qm9_raw"
+CACHE_PATH = ROOT / "data" / "qm9_processed" / "cache.pkl"
 
 
 class QM9Dataset:
     def __init__(self):
-        self.molecules: List[Dict] = []
-        self._id_to_idx: Dict[str, int] = {}
-        self._load()
+        self._index: Dict = {}
+        self._cache: Dict[str, Dict] = {}     # mol_id -> molekul lengkap
+        self._lock = threading.Lock()         # protect cache + pickle write
+        self._load_index()
+        self._load_cache()
 
-    def _load(self):
+    # ---------- bootstrap ----------
+
+    def _load_index(self):
+        if not INDEX_PATH.exists():
+            raise FileNotFoundError(
+                f"Index tidak ditemukan di {INDEX_PATH}. "
+                f"Jalankan `python setup.py` dulu untuk build index."
+            )
+        self._index = load_index(INDEX_PATH)
+        # apply nama PubChem dari names_cache.json ke meta
+        names_cache = _load_names_cache()
+        if names_cache:
+            for mol_id, m in self._index["meta"].items():
+                if not m.get("name") and m.get("smiles") and m["smiles"] in names_cache:
+                    m["name"] = names_cache[m["smiles"]]
+
+    def _load_cache(self):
         if CACHE_PATH.exists():
-            with open(CACHE_PATH, 'rb') as f:
-                self.molecules = pickle.load(f)
-            for idx, mol in enumerate(self.molecules):
-                self._id_to_idx[mol['mol_id']] = idx
-            # Apply cached names from PubChem (may have been resolved separately)
-            names_cache = _load_names_cache()
-            if names_cache:
-                for mol in self.molecules:
-                    if not mol.get('name') and mol.get('smiles') and mol['smiles'] in names_cache:
-                        mol['name'] = names_cache[mol['smiles']]
-            return
-
-        files = sorted(RAW_DIR.glob("*.xyz"))[:MAX_MOLECULES]
-        for f in files:
             try:
-                mol = parse_xyz(f)
-                bonds = infer_bonds(mol['atoms'], mol['coords'])
-                layout = compute_2d_layout(mol['atoms'], bonds)
-
-                nodes = []
-                for i, atom in enumerate(mol['atoms']):
-                    x2d, y2d = layout[i]
-                    nodes.append({
-                        "id": i,
-                        "element": atom,
-                        "x": float(mol['coords'][i][0]),
-                        "y": float(mol['coords'][i][1]),
-                        "z": float(mol['coords'][i][2]),
-                        "x2d": x2d,
-                        "y2d": y2d,
-                    })
-
-                edges = []
-                for i, j, dist in bonds:
-                    edges.append({
-                        "source": i,
-                        "target": j,
-                        "length": round(dist, 4),
-                    })
-
-                self.molecules.append({
-                    "mol_id": mol['mol_id'],
-                    "n_atoms": mol['n_atoms'],
-                    "formula": self._formula(mol['atoms']),
-                    "name": mol.get('name'),
-                    "smiles": mol.get('smiles'),
-                    "nodes": nodes,
-                    "edges": edges,
-                    "properties": mol['properties'],
-                })
-                self._id_to_idx[mol['mol_id']] = len(self.molecules) - 1
+                with open(CACHE_PATH, 'rb') as f:
+                    self._cache = pickle.load(f)
             except Exception as e:
-                print(f"Error parsing {f}: {e}")
-                continue
+                print(f"Cache pickle corrupt ({e}), mulai fresh")
+                self._cache = {}
 
+    def _save_cache(self):
         CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CACHE_PATH, 'wb') as f:
-            pickle.dump(self.molecules, f)
+            pickle.dump(self._cache, f)
 
-    def _formula(self, atoms: List[str]) -> str:
-        counts = {}
-        for a in atoms:
-            counts[a] = counts.get(a, 0) + 1
-        return ''.join(f"{k}{counts[k] if counts[k] > 1 else ''}" for k in sorted(counts.keys()))
+    # ---------- core lookup ----------
+
+    def get_molecule(self, mol_id: str) -> Optional[Dict]:
+        """Lookup O(1) by mol_id. Parse on-demand kalau belum di-cache."""
+        if mol_id in self._cache:
+            return self._cache[mol_id]
+        if mol_id not in self._index["meta"]:
+            return None
+        with self._lock:
+            # double-check setelah acquire lock
+            if mol_id in self._cache:
+                return self._cache[mol_id]
+            mol = self._build_molecule(mol_id)
+            if mol is None:
+                return None
+            self._cache[mol_id] = mol
+            self._save_cache()
+            return mol
+
+    def _build_molecule(self, mol_id: str) -> Optional[Dict]:
+        """Parse xyz + infer bonds + layout 2D. Heavy step (~10-50ms per molekul)."""
+        path = RAW_DIR / f"{mol_id}.xyz"
+        if not path.exists():
+            return None
+        try:
+            mol = parse_xyz(path)
+        except Exception as e:
+            print(f"parse error {mol_id}: {e}")
+            return None
+
+        bonds = infer_bonds(mol['atoms'], mol['coords'])
+        layout = compute_2d_layout(mol['atoms'], bonds)
+
+        nodes = []
+        for i, atom in enumerate(mol['atoms']):
+            x2d, y2d = layout[i]
+            nodes.append({
+                "id": i,
+                "element": atom,
+                "x": float(mol['coords'][i][0]),
+                "y": float(mol['coords'][i][1]),
+                "z": float(mol['coords'][i][2]),
+                "x2d": x2d,
+                "y2d": y2d,
+            })
+
+        edges = [
+            {"source": i, "target": j, "length": round(dist, 4)}
+            for i, j, dist in bonds
+        ]
+
+        # nama dari index (sudah merged dengan PubChem cache)
+        meta = self._index["meta"].get(mol_id, {})
+        return {
+            "mol_id": mol_id,
+            "n_atoms": mol['n_atoms'],
+            "formula": hill_formula(mol['atoms']),
+            "name": meta.get('name') or mol.get('name'),
+            "smiles": mol.get('smiles'),
+            "nodes": nodes,
+            "edges": edges,
+            "properties": mol['properties'],
+        }
+
+    # ---------- list / search / compare / stats ----------
 
     def list_molecules(self, limit: int = 50, offset: int = 0):
-        total = len(self.molecules)
+        """Listing langsung dari index. O(limit) — tidak parse xyz."""
+        meta = self._index["meta"]
+        ids = list(meta.keys())  # urutan insert (= urutan file sorted)
+        total = len(ids)
         items = []
-        for mol in self.molecules[offset:offset + limit]:
+        for mol_id in ids[offset:offset + limit]:
+            m = meta[mol_id]
+            props = m.get("properties", {})
             items.append({
-                "mol_id": mol['mol_id'],
-                "n_atoms": mol['n_atoms'],
-                "formula": mol['formula'],
-                "name": mol.get('name'),
-                "smiles": mol.get('smiles'),
-                "mu": mol['properties'].get('mu_Debye'),
-                "gap": mol['properties'].get('gap_Hartree'),
+                "mol_id": mol_id,
+                "n_atoms": m["n_atoms"],
+                "formula": m["formula"],
+                "name": m.get("name"),
+                "smiles": m.get("smiles"),
+                "mu": props.get("mu_Debye"),
+                "gap": props.get("gap_Hartree"),
             })
         return {"total": total, "items": items}
 
-    def get_molecule(self, mol_id: str) -> Optional[Dict]:
-        idx = self._id_to_idx.get(mol_id)
-        if idx is None:
-            return None
-        return self.molecules[idx]
+    def search(self, query: str, limit: int = 50):
+        """
+        Cari berdasarkan formula (Hill) -> O(1) hash map lookup.
+        Fallback: substring match di mol_id / name / smiles -> O(n).
+        """
+        q = query.strip()
+        if not q:
+            return {"total": 0, "items": []}
+
+        meta = self._index["meta"]
+        # Tier 1: exact formula match (O(1))
+        formula_idx = self._index["formula_idx"]
+        normalized = self._normalize_formula(q)
+        if normalized in formula_idx:
+            ids = formula_idx[normalized][:limit]
+            return {
+                "total": len(formula_idx[normalized]),
+                "matched_by": "formula",
+                "items": [self._summary(mol_id) for mol_id in ids],
+            }
+
+        # Tier 1b: exact smiles match (O(1))
+        smiles_idx = self._index["smiles_idx"]
+        if q in smiles_idx:
+            mol_id = smiles_idx[q]
+            return {"total": 1, "matched_by": "smiles", "items": [self._summary(mol_id)]}
+
+        # Tier 2: substring match (O(n)) — fallback nama / mol_id
+        ql = q.lower()
+        items = []
+        for mol_id, m in meta.items():
+            if ql in mol_id.lower() or (m.get("name") and ql in m["name"].lower()):
+                items.append(self._summary(mol_id))
+                if len(items) >= limit:
+                    break
+        return {"total": len(items), "matched_by": "substring", "items": items}
+
+    def _normalize_formula(self, s: str) -> str:
+        """Terima 'h2o', 'H2O', 'h₂o' dll, normalisasi ke Hill."""
+        # ubah subscript unicode -> digit, parse element+count, bangun ulang
+        sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+        s = s.translate(sub).strip()
+        # parse pasangan (Element)(count?) — case-insensitive, lalu normalisasi
+        # ke convention: huruf 1 uppercase, huruf 2 lowercase (Cl, Br, dll)
+        import re
+        atoms = []
+        for el, cnt in re.findall(r"([A-Za-z][a-z]?)(\d*)", s):
+            if not el:
+                continue
+            normalized = el[0].upper() + (el[1:].lower() if len(el) > 1 else "")
+            n = int(cnt) if cnt else 1
+            atoms.extend([normalized] * n)
+        if not atoms:
+            return s
+        return hill_formula(atoms)
+
+    def _summary(self, mol_id: str) -> Dict:
+        m = self._index["meta"][mol_id]
+        props = m.get("properties", {})
+        return {
+            "mol_id": mol_id,
+            "n_atoms": m["n_atoms"],
+            "formula": m["formula"],
+            "name": m.get("name"),
+            "smiles": m.get("smiles"),
+            "mu": props.get("mu_Debye"),
+            "gap": props.get("gap_Hartree"),
+        }
 
     def compare(self, mol_ids: List[str]):
-        return [self.get_molecule(mid) for mid in mol_ids if mid in self._id_to_idx]
+        return [self.get_molecule(mid) for mid in mol_ids if mid in self._index["meta"]]
 
     def stats(self):
-        props = {}
+        """Statistik 16 properti, dihitung dari index (sekali O(n) saat startup-cache)."""
+        if hasattr(self, "_stats_cached"):
+            return self._stats_cached
+        meta = self._index["meta"]
+        out = {}
         for name in PROPERTIES_NAMES[2:]:
-            values = [m['properties'][name] for m in self.molecules if name in m['properties']]
+            values = [
+                m["properties"][name]
+                for m in meta.values()
+                if "properties" in m and m["properties"].get(name) is not None
+            ]
             if values:
                 arr = np.array(values)
-                props[name] = {
+                out[name] = {
                     "min": round(float(np.min(arr)), 6),
                     "max": round(float(np.max(arr)), 6),
                     "mean": round(float(np.mean(arr)), 6),
                 }
-        return props
+        self._stats_cached = out
+        return out
+
+    @property
+    def molecules(self):
+        """Backward-compat: list semua meta (untuk resolve_names_batch)."""
+        return [
+            {**m, "mol_id": mol_id}
+            for mol_id, m in self._index["meta"].items()
+        ]
 
 
 dataset = QM9Dataset()

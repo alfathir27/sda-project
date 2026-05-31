@@ -117,19 +117,14 @@ def extract_dataset(force: bool = False) -> None:
     info(f"Extracted {n} file .xyz")
 
 
-def build_cache() -> None:
-    step("Build cache.pkl (pre-process 2000 molekul pertama)")
-    info("Trigger data_manager untuk parse + bangun graf + layout 2D...")
-    info("Sekitar ~30 detik, sekali saja.")
+def build_index() -> None:
+    step("Build index hash map (scan semua .xyz)")
+    info("~134K file, butuh ~3 detik. Hasil disimpan ke data/qm9_processed/index.json")
     py = venv_python()
     subprocess.check_call(
-        [str(py), "-c", "import data_manager"],
+        [str(py), "index_builder.py"],
         cwd=str(BACKEND),
     )
-    cache = PROCESSED_DIR / "cache.pkl"
-    if cache.exists():
-        size_mb = cache.stat().st_size // (1024 * 1024)
-        info(f"Cache dibuat: {cache.relative_to(ROOT)} ({size_mb} MB)")
 
 
 def main() -> None:
@@ -138,9 +133,9 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--build-cache",
+        "--skip-index",
         action="store_true",
-        help="Pre-build cache.pkl supaya startup pertama langsung instan",
+        help="Skip build index (kalau index.json sudah ada dan valid)",
     )
     parser.add_argument(
         "--force-download",
@@ -171,8 +166,12 @@ def main() -> None:
     if not args.skip_data:
         download_dataset(force=args.force_download)
         extract_dataset(force=args.force_extract)
-    if args.build_cache:
-        build_cache()
+    if not args.skip_index:
+        index_path = PROCESSED_DIR / "index.json"
+        if index_path.exists():
+            info(f"Index sudah ada di {index_path.relative_to(ROOT)}, skip (pakai --force-index untuk rebuild)")
+        else:
+            build_index()
 
     step("Setup selesai")
     venv_rel = VENV.relative_to(ROOT)
