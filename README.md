@@ -10,17 +10,17 @@ Setiap molekul digambarkan sebagai graf \( G = (V, E) \) dengan rincian:
 - **Node** = atom, lengkap dengan atribut elemen, koordinat 3D, dan posisi 2D.
 - **Edge** = ikatan kimia, beserta bobot berupa jarak antar atom.
 
-Implementasinya memakai **adjacency list** lewat NetworkX (`nx.Graph`). Pilihan ini diambil karena graf molekul tergolong **sparse**, dengan rata-rata derajat sekitar 2 saja. Kalau dipaksakan ke adjacency matrix berukuran O(n²), banyak slot yang kosong sehingga memori jadi terbuang sia-sia.
+Implementasinya memakai **adjacency list** lewat NetworkX (`nx.Graph`). Pilihan ini diambil karena graf molekul tergolong **sparse**, dengan rata-rata derajat sekitar 2 saja. Kalau dipaksakan ke adjacency matrix berukuran O(n^2), banyak slot yang kosong sehingga memori jadi terbuang sia-sia.
 
-### Algoritma Konstruksi Graf, O(n²)
+### Algoritma Konstruksi Graf, O(n^2)
 
 Pada dataset QM9, file mentah yang tersedia hanya memuat koordinat 3D atom **tanpa keterangan ikatan**. Karena itu, edge harus dibentuk sendiri lewat algoritma berbasis jarak antar atom:
 
 ```
 INFER-BONDS(atoms, coords, tolerance=0.45):
-  for i ← 0 to n-1:
-      for j ← i+1 to n-1:              // segitiga atas (graf undirected)
-          dist ← EUCLIDEAN-DISTANCE(coords[i], coords[j])
+  for i = 0 to n-1:
+      for j = i+1 to n-1:              // segitiga atas (graf undirected)
+          dist = EUCLIDEAN-DISTANCE(coords[i], coords[j])
           if dist < COVALENT_RADII[i] + COVALENT_RADII[j] + tolerance:
               add_edge(i, j, weight=dist)
 ```
@@ -29,22 +29,22 @@ Nilai jari-jari kovalen tiap elemen disimpan dalam **hash map** bernama `COVALEN
 
 ### Algoritma Layout 2D (Force-Directed)
 
-1. **Kamada-Kawai** sebagai pilihan utama. Algoritma ini bekerja dengan meminimalkan energi sistem pegas, di mana panjang ideal antar node dibuat sebanding dengan shortest path. Kompleksitasnya O(n³) untuk perhitungan shortest path dan O(n²) per iterasi Newton-Raphson.
-2. **Fruchterman-Reingold** dipakai sebagai cadangan ketika graf tidak terhubung. Algoritma ini mengkombinasikan gaya tarik antar tetangga dengan gaya tolak pairwise. Kompleksitasnya O(iter × n²).
+1. **Kamada-Kawai** sebagai pilihan utama. Algoritma ini bekerja dengan meminimalkan energi sistem pegas, di mana panjang ideal antar node dibuat sebanding dengan shortest path. Kompleksitasnya O(n^3) untuk perhitungan shortest path dan O(n^2) per iterasi Newton-Raphson.
+2. **Fruchterman-Reingold** dipakai sebagai cadangan ketika graf tidak terhubung. Algoritma ini mengkombinasikan gaya tarik antar tetangga dengan gaya tolak pairwise. Kompleksitasnya O(iter * n^2).
 
 ### Hash Map (Pencarian O(1))
 
-| Hash Map | Key → Value | Kegunaan |
+| Hash Map | Key -> Value | Kegunaan |
 |----------|-------------|----------|
-| `meta` | mol_id → metadata | Lookup molekul by ID |
-| `formula_idx` | formula (Hill) → list mol_id | Cari molekul by rumus kimia (mis. `H2O`, `C6H6`) |
-| `smiles_idx` | SMILES → mol_id | Cari molekul by SMILES |
-| `COVALENT_RADII` | element → radius | Inferensi ikatan |
-| `SMILES_TO_NAME` | SMILES → nama | Resolusi nama lokal |
-| `names_cache.json` | SMILES → nama | Cache nama PubChem |
-| `ATOM_COLORS` | element → hex color | Warna node di frontend |
+| `meta` | mol_id -> metadata | Lookup molekul by ID |
+| `formula_idx` | formula (Hill) -> list mol_id | Cari molekul by rumus kimia (mis. `H2O`, `C6H6`) |
+| `smiles_idx` | SMILES -> mol_id | Cari molekul by SMILES |
+| `COVALENT_RADII` | element -> radius | Inferensi ikatan |
+| `SMILES_TO_NAME` | SMILES -> nama | Resolusi nama lokal |
+| `names_cache.json` | SMILES -> nama | Cache nama PubChem |
+| `ATOM_COLORS` | element -> hex color | Warna node di frontend |
 
-Rantai akses datanya kira-kira begini: `query → hash map → mol_id → cache pickle / parse on-demand`. Hasil akhirnya berkecepatan **O(1)** untuk lookup, ditambah satu kali parse file `.xyz` ketika molekul dibuka pertama kali.
+Rantai akses datanya kira-kira begini: `query -> hash map -> mol_id -> cache pickle / parse on-demand`. Hasil akhirnya berkecepatan **O(1)** untuk lookup, ditambah satu kali parse file `.xyz` ketika molekul dibuka pertama kali.
 
 ### Caching (Trade-off Waktu vs Ruang)
 
@@ -78,7 +78,7 @@ SDA/
 │   ├── qm9_loader.py           # Parser .xyz + hash map nama (PubChem)
 │   ├── graph_processor.py      # Konstruksi graf + algoritma layout 2D
 │   ├── data_manager.py         # Lazy load via index, cache pickle, query O(1)
-│   ├── index_builder.py        # Scan 134K .xyz → hash map index
+│   ├── index_builder.py        # Scan 134K .xyz -> hash map index
 │   ├── smiles_parser.py        # Parser SMILES untuk fallback render
 │   ├── requirements.txt
 │   └── static/
@@ -88,9 +88,9 @@ SDA/
 └── data/
     ├── qm9_raw/                # 133.885 file .xyz
     └── qm9_processed/
-        ├── index.json          # Hash map: formula/SMILES → mol_id + metadata
+        ├── index.json          # Hash map: formula/SMILES -> mol_id + metadata
         ├── cache.pkl           # Cache molekul yang sudah pernah dibuka
-        └── names_cache.json    # Hash map SMILES → nama
+        └── names_cache.json    # Hash map SMILES -> nama
 ```
 
 ### API Endpoints
@@ -98,10 +98,10 @@ SDA/
 | Method | Path | Deskripsi | Kompleksitas |
 |--------|------|-----------|--------------|
 | GET | `/molecules?limit=&offset=` | Daftar molekul | O(limit) |
-| GET | `/molecules/{mol_id}` | Detail graf + properti (lazy parse) | O(1) cached, O(n²) parse pertama |
+| GET | `/molecules/{mol_id}` | Detail graf + properti (lazy parse) | O(1) cached, O(n^2) parse pertama |
 | GET | `/search?q=` | Cari by formula / SMILES / substring | O(1) untuk formula & SMILES |
-| POST | `/render-formula` | Render graf naif dari formula (fallback) | O(n) + O(n³) layout |
-| POST | `/render-smiles` | Render graf dari SMILES (fallback) | O(n) parse + O(n³) layout |
+| POST | `/render-formula` | Render graf naif dari formula (fallback) | O(n) + O(n^3) layout |
+| POST | `/render-smiles` | Render graf dari SMILES (fallback) | O(n) parse + O(n^3) layout |
 | POST | `/compare` | Bandingkan molekul | O(k) |
 | GET | `/properties/stats` | Statistik 16 properti kuantum | O(n) |
 | POST | `/resolve-names` | Resolusi nama PubChem | O(m) + network |
