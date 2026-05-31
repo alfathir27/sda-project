@@ -157,6 +157,14 @@ input[type="text"]:focus { border-color: var(--blue-500); }
 .compare-mol .mol-header { margin-bottom: 8px; }
 .compare-mol .cy-container { height: 240px; }
 
+/* Warning banner (untuk graf sintetik) */
+.warning-banner {
+  background: #fef3c7; color: #92400e;
+  border: 1px solid #fde68a; border-radius: var(--radius);
+  padding: 10px 14px; margin-bottom: 16px;
+  font-size: 13px; line-height: 1.4;
+}
+
 /* Empty state */
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

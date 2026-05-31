@@ -51,6 +51,10 @@ class RenderRequest(BaseModel):
     smiles: str
 
 
+class RenderFormulaRequest(BaseModel):
+    formula: str
+
+
 @app.post("/render-smiles")
 def render_smiles(req: RenderRequest):
     """
@@ -87,6 +91,67 @@ def render_smiles(req: RenderRequest):
         "edges": edges,
         "properties": {},
         "synthetic": True,
+    }
+
+
+@app.post("/render-formula")
+def render_formula(req: RenderFormulaRequest):
+    """
+    Tier 3b: render graf naif dari formula.
+    Formula tidak menentukan ikatan -> pakai heuristik:
+    atom non-H dirantai linier, atom H di-distribute ke atom non-H.
+    """
+    import re
+    sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+    s = req.formula.translate(sub).strip()
+    atoms_list = []
+    for el, cnt in re.findall(r"([A-Za-z][a-z]?)(\d*)", s):
+        if not el:
+            continue
+        normalized = el[0].upper() + (el[1:].lower() if len(el) > 1 else "")
+        atoms_list.extend([normalized] * (int(cnt) if cnt else 1))
+    if not atoms_list:
+        raise HTTPException(status_code=400, detail="Formula tidak valid")
+
+    # pisah non-H dan H
+    heavy = [(i, el) for i, el in enumerate(atoms_list) if el != "H"]
+    hydrogens = [i for i, el in enumerate(atoms_list) if el == "H"]
+    bonds = []
+    if len(heavy) >= 2:
+        # rantai linier antar atom berat
+        for k in range(len(heavy) - 1):
+            bonds.append((heavy[k][0], heavy[k + 1][0], 1.0))
+    # distribusi H ke atom non-H secara round-robin
+    if heavy:
+        for k, h_idx in enumerate(hydrogens):
+            target = heavy[k % len(heavy)][0]
+            bonds.append((target, h_idx, 1.0))
+    elif len(hydrogens) >= 2:
+        # khusus kasus aneh (cuma H), rantaikan saja
+        for k in range(len(hydrogens) - 1):
+            bonds.append((hydrogens[k], hydrogens[k + 1], 1.0))
+
+    layout = compute_2d_layout(atoms_list, bonds)
+    nodes = [
+        {"id": i, "element": el, "x": 0.0, "y": 0.0, "z": 0.0,
+         "x2d": layout[i][0], "y2d": layout[i][1]}
+        for i, el in enumerate(atoms_list)
+    ]
+    edges = [
+        {"source": i, "target": j, "length": 1.0, "order": 1}
+        for i, j, _ in bonds
+    ]
+    return {
+        "mol_id": None,
+        "n_atoms": len(atoms_list),
+        "formula": hill_formula(atoms_list),
+        "name": None,
+        "smiles": None,
+        "nodes": nodes,
+        "edges": edges,
+        "properties": {},
+        "synthetic": True,
+        "warning": "Struktur ikatan tidak diketahui dari formula. Gambar ini hanya representasi naif (rantai linier antar atom berat + H tersebar).",
     }
 
 

@@ -41,7 +41,7 @@ async function loadMolecules() {
     total = data.total;
     document.getElementById('search-meta').textContent =
       data.total === 0
-        ? `Tidak ada hasil. Coba klik "Render dari SMILES" di bawah.`
+        ? `Tidak ada hasil. Coba klik "Render dari Notasi" di bawah.`
         : `${data.total} hasil (matched: ${data.matched_by})`;
   } else {
     const data = await apiFetch(`/molecules?limit=${LIMIT}&offset=${offset}`);
@@ -64,7 +64,7 @@ function renderList() {
             onclick="selectMol('${m.mol_id}')">
       <span class="mol-id">${m.name || m.mol_id}</span>
       <span class="mol-formula">${m.formula}</span>
-      <div class="mol-meta">${m.name ? m.mol_id : ''} ${m.name ? '·' : ''} ${m.n_atoms} atoms &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
+      <div class="mol-meta">${m.name ? m.mol_id : ''} ${m.name ? '·' : ''} ${m.n_atoms} atom &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
     </button>
   `).join('');
 }
@@ -92,19 +92,27 @@ function onSearch() {
 
 async function renderFromSmiles() {
   const q = document.getElementById('search-input').value.trim();
+  const help = document.getElementById('render-help');
+  help.innerHTML = '';
   if (!q) return;
+
+  // pure-formula (mis. H2O) -> render via endpoint formula (graf naif + warning)
+  const isFormula = /^([A-Z][a-z]?\d*)+$/.test(q);
+  const endpoint = isFormula ? '/render-formula' : '/render-smiles';
+  const body = isFormula ? { formula: q } : { smiles: q };
+
   showView('loading');
   try {
-    const mol = await apiFetch('/render-smiles', {
+    const mol = await apiFetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ smiles: q }),
+      body: JSON.stringify(body),
     });
     currentMol = mol;
     renderMolecule();
     showView('mol');
   } catch (e) {
-    alert(`SMILES invalid: ${e.message}`);
+    help.innerHTML = `<span style="color:#dc2626">Input tidak valid.</span> Contoh: <code>H2O</code>, <code>C6H6</code>, atau SMILES <code>CCO</code>, <code>c1ccccc1</code>.`;
     showView('empty');
   }
 }
@@ -132,14 +140,32 @@ function showView(view) {
 // --- Render molecule ---
 function renderMolecule() {
   if (!currentMol) return;
-  document.getElementById('mol-title').textContent = currentMol.name || currentMol.mol_id;
+  document.getElementById('mol-title').textContent = currentMol.name || currentMol.mol_id || currentMol.formula;
   document.getElementById('mol-subtitle').textContent =
-    `${currentMol.name ? currentMol.mol_id + ' · ' : ''}${currentMol.formula} · ${currentMol.n_atoms} atoms · ${currentMol.edges.length} bonds${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
+    `${currentMol.name ? (currentMol.mol_id ? currentMol.mol_id + ' · ' : '') : ''}${currentMol.formula} · ${currentMol.n_atoms} atom · ${currentMol.edges.length} ikatan${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
 
+  // banner warning untuk graf sintetik (dari formula / SMILES)
+  const banner = document.getElementById('mol-warning');
+  if (currentMol.warning) {
+    banner.style.display = '';
+    banner.textContent = '⚠ ' + currentMol.warning;
+  } else if (currentMol.synthetic) {
+    banner.style.display = '';
+    banner.textContent = '⚠ Graf disintesis dari notasi. Tidak ada data koordinat 3D maupun properti kuantum.';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // tombol compare cuma masuk akal kalau punya mol_id
   const btn = document.getElementById('btn-add-compare');
-  const inCompare = compareIds.includes(currentMol.mol_id);
-  btn.textContent = inCompare ? '✓ In compare' : '+ Add to compare';
-  btn.className = inCompare ? 'btn btn-primary' : 'btn btn-outline';
+  if (!currentMol.mol_id) {
+    btn.style.display = 'none';
+  } else {
+    btn.style.display = '';
+    const inCompare = compareIds.includes(currentMol.mol_id);
+    btn.textContent = inCompare ? '✓ Sudah dibandingkan' : '+ Tambah ke pembanding';
+    btn.className = inCompare ? 'btn btn-primary' : 'btn btn-outline';
+  }
 
   renderGraph('cy-container', currentMol.nodes, currentMol.edges);
   renderProps('props-grid', currentMol.properties);
@@ -254,7 +280,7 @@ async function toggleCompare() {
 async function renderCompare() {
   if (compareIds.length < 2) {
     document.getElementById('compare-grid').innerHTML =
-      '<p class="text-muted" style="grid-column:1/-1">Select at least 2 molecules to compare.</p>';
+      '<p class="text-muted" style="grid-column:1/-1">Pilih minimal 2 molekul untuk dibandingkan.</p>';
     return;
   }
   const mols = await apiFetch('/compare', {
@@ -266,7 +292,7 @@ async function renderCompare() {
   grid.innerHTML = mols.map(m => `
     <div class="compare-mol">
       <div class="mol-header">
-        <div><strong>${m.name || m.mol_id}</strong><br><span class="text-muted">${m.name ? m.mol_id + ' · ' : ''}${m.formula} · ${m.n_atoms} atoms</span></div>
+        <div><strong>${m.name || m.mol_id}</strong><br><span class="text-muted">${m.name ? m.mol_id + ' · ' : ''}${m.formula} · ${m.n_atoms} atom</span></div>
       </div>
       <div id="cy-${m.mol_id}" class="cy-container"></div>
     </div>
