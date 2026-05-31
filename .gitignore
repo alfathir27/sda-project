@@ -14,3 +14,7 @@ backend/pyproject.toml
 backend/uv.lock
 package.json
 package-lock.json
+
+# Claude Code
+.claude/
+CLAUDE.md
