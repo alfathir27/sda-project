@@ -59,9 +59,9 @@ function renderList() {
   el.innerHTML = molecules.map(m => `
     <button class="mol-item ${currentMol && currentMol.mol_id === m.mol_id ? 'active' : ''}"
             onclick="selectMol('${m.mol_id}')">
-      <span class="mol-id">${m.name || m.mol_id}</span>
+      <span class="mol-id">${m.mol_id}</span>
       <span class="mol-formula">${m.formula}</span>
-      <div class="mol-meta">${m.name ? m.mol_id : ''} ${m.name ? '·' : ''} ${m.n_atoms} atom &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
+      <div class="mol-meta">${m.n_atoms} atom &middot; μ: ${m.mu?.toFixed(2) ?? '-'} &middot; gap: ${m.gap?.toFixed(3) ?? '-'}</div>
     </button>
   `).join('');
 }
@@ -139,7 +139,7 @@ function renderMolecule() {
   if (!currentMol) return;
   document.getElementById('mol-title').textContent = currentMol.name || currentMol.mol_id || currentMol.formula;
   document.getElementById('mol-subtitle').textContent =
-    `${currentMol.name ? (currentMol.mol_id ? currentMol.mol_id + ' · ' : '') : ''}${currentMol.formula} · ${currentMol.n_atoms} atom · ${currentMol.edges.length} ikatan${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
+    `${currentMol.mol_id ? currentMol.mol_id + ' · ' : ''}${currentMol.formula} · ${currentMol.n_atoms} atom · ${currentMol.edges.length} ikatan${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
 
   // banner buat graf hasil render dari notasi
   const banner = document.getElementById('mol-warning');

@@ -11,6 +11,8 @@ from qm9_loader import (
     parse_xyz,
     PROPERTIES_NAMES,
     _load_names_cache,
+    _save_names_cache,
+    _pubchem_resolve,
     hill_formula,
 )
 from graph_processor import infer_bonds, compute_2d_layout
@@ -36,12 +38,7 @@ class QM9Dataset:
                 f"jalanin `python setup.py` dulu"
             )
         self._index = load_index(INDEX_PATH)
-        # merge nama dari PubChem cache ke meta
-        names_cache = _load_names_cache()
-        if names_cache:
-            for mol_id, m in self._index["meta"].items():
-                if not m.get("name") and m.get("smiles") and m["smiles"] in names_cache:
-                    m["name"] = names_cache[m["smiles"]]
+        self._names = _load_names_cache()
 
     def _load_cache(self):
         if CACHE_PATH.exists():
@@ -56,6 +53,17 @@ class QM9Dataset:
         CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CACHE_PATH, 'wb') as f:
             pickle.dump(self._cache, f)
+
+    def _resolve_name(self, smiles, fallback=None):
+        # cek cache dulu, baru hit PubChem. None disimpan juga biar gak retry molekul yg emang gak ada di db
+        if not smiles:
+            return fallback
+        if smiles in self._names:
+            return self._names[smiles] or fallback
+        name = _pubchem_resolve(smiles)
+        self._names[smiles] = name
+        _save_names_cache(self._names)
+        return name or fallback
 
     # ---------- core lookup ----------
 
@@ -106,12 +114,14 @@ class QM9Dataset:
         ]
 
         meta = self._index["meta"].get(mol_id, {})
+        smiles = mol.get('smiles')
+        name = self._resolve_name(smiles, fallback=meta.get('name') or mol.get('name'))
         return {
             "mol_id": mol_id,
             "n_atoms": mol['n_atoms'],
             "formula": hill_formula(mol['atoms']),
-            "name": meta.get('name') or mol.get('name'),
-            "smiles": mol.get('smiles'),
+            "name": name,
+            "smiles": smiles,
             "nodes": nodes,
             "edges": edges,
             "properties": mol['properties'],
@@ -131,7 +141,6 @@ class QM9Dataset:
                 "mol_id": mol_id,
                 "n_atoms": m["n_atoms"],
                 "formula": m["formula"],
-                "name": m.get("name"),
                 "smiles": m.get("smiles"),
                 "mu": props.get("mu_Debye"),
                 "gap": props.get("gap_Hartree"),
@@ -159,11 +168,11 @@ class QM9Dataset:
             mol_id = smiles_idx[q]
             return {"total": 1, "matched_by": "smiles", "items": [self._summary(mol_id)]}
 
-        # fallback: cocokin substring di mol_id atau name
+        # fallback: cocokin substring di mol_id (name belum di-fetch sampai user buka detail)
         ql = q.lower()
         items = []
-        for mol_id, m in meta.items():
-            if ql in mol_id.lower() or (m.get("name") and ql in m["name"].lower()):
+        for mol_id in meta:
+            if ql in mol_id.lower():
                 items.append(self._summary(mol_id))
                 if len(items) >= limit:
                     break
@@ -192,7 +201,6 @@ class QM9Dataset:
             "mol_id": mol_id,
             "n_atoms": m["n_atoms"],
             "formula": m["formula"],
-            "name": m.get("name"),
             "smiles": m.get("smiles"),
             "mu": props.get("mu_Debye"),
             "gap": props.get("gap_Hartree"),

@@ -1,10 +1,7 @@
 from pathlib import Path
 import json
-import time
 import urllib.request
 import urllib.parse
-import urllib.error
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 
 COVALENT_RADII = {
@@ -77,7 +74,7 @@ def _save_names_cache(cache):
 
 
 def _pubchem_resolve(smiles):
-    # ambil nama IUPAC dari PubChem REST API
+    # ambil nama IUPAC dari PubChem REST API, dipanggil on-demand pas user buka molekul
     try:
         encoded = urllib.parse.quote(smiles, safe='')
         url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded}/property/IUPACName,Title/JSON"
@@ -88,51 +85,6 @@ def _pubchem_resolve(smiles):
         return props.get("IUPACName") or props.get("Title")
     except Exception:
         return None
-
-
-def resolve_names_batch(molecules, workers=8, save_every=200):
-    cache = _load_names_cache()
-    to_resolve = []
-    for mol in molecules:
-        smiles = mol.get("smiles")
-        if not smiles:
-            continue
-        if mol.get("name"):
-            cache[smiles] = mol["name"]
-            continue
-        if smiles in cache:
-            mol["name"] = cache[smiles]
-            continue
-        to_resolve.append(mol)
-
-    if not to_resolve:
-        return cache
-
-    # dedup smiles dulu, biar molekul yg punya smiles sama gak di-fetch dua kali
-    unique_smiles = {}
-    for mol in to_resolve:
-        unique_smiles.setdefault(mol["smiles"], []).append(mol)
-
-    print(f"resolve {len(unique_smiles)} smiles unik dari PubChem (workers={workers})")
-
-    done = 0
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(_pubchem_resolve, s): s for s in unique_smiles}
-        for fut in as_completed(futures):
-            smiles = futures[fut]
-            name = fut.result()
-            if name:
-                cache[smiles] = name
-                for mol in unique_smiles[smiles]:
-                    mol["name"] = name
-            done += 1
-            if done % save_every == 0:
-                _save_names_cache(cache)
-                print(f"  {done}/{len(unique_smiles)}")
-
-    _save_names_cache(cache)
-    print(f"selesai. total {len(cache)} smiles tercache")
-    return cache
 
 PROPERTIES_NAMES = [
     "tag", "index", "A_GHz", "B_GHz", "C_GHz", "mu_Debye", "alpha_Bohr3",

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from data_manager import dataset
-from qm9_loader import resolve_names_batch, hill_formula
+from qm9_loader import hill_formula
 from smiles_parser import parse_smiles
 from graph_processor import compute_2d_layout
 
@@ -27,7 +27,7 @@ def root():
 
 
 @app.get("/molecules")
-def list_molecules(limit=50, offset=0):
+def list_molecules(limit: int = 50, offset: int = 0):
     return dataset.list_molecules(limit, offset)
 
 
@@ -150,13 +150,6 @@ def compare_molecules(req: CompareRequest):
 @app.get("/properties/stats")
 def get_stats():
     return dataset.stats()
-
-
-@app.post("/resolve-names")
-def resolve_names():
-    cache = resolve_names_batch(dataset.molecules)
-    resolved = sum(1 for m in dataset.molecules if m.get('name'))
-    return {"resolved": resolved, "total": len(dataset.molecules), "unique_smiles": len(cache)}
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
