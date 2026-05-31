@@ -10,7 +10,6 @@ import numpy as np
 from qm9_loader import (
     parse_xyz,
     PROPERTIES_NAMES,
-    resolve_names_batch,
     _load_names_cache,
     hill_formula,
 )

@@ -125,6 +125,19 @@ def build_index():
     )
 
 
+def resolve_names(workers=8):
+    step("resolve nama molekul dari PubChem")
+    info(f"fetch nama IUPAC paralel pakai {workers} workers")
+    info("bisa makan waktu, hasilnya di-cache jadi sekali aja")
+    py = venv_python()
+    code = (
+        "from data_manager import dataset; "
+        "from qm9_loader import resolve_names_batch; "
+        f"resolve_names_batch(dataset.molecules, workers={workers})"
+    )
+    subprocess.check_call([str(py), "-c", code], cwd=str(BACKEND))
+
+
 def main():
     parser = argparse.ArgumentParser(description="setup awal QM9 graph explorer")
     parser.add_argument("--skip-index", action="store_true", help="skip build index")
@@ -132,6 +145,8 @@ def main():
     parser.add_argument("--force-extract", action="store_true", help="extract ulang xyz")
     parser.add_argument("--skip-deps", action="store_true", help="skip pip install")
     parser.add_argument("--skip-data", action="store_true", help="skip download dan extract")
+    parser.add_argument("--resolve-names", action="store_true", help="fetch nama IUPAC dari PubChem (lama)")
+    parser.add_argument("--workers", type=int, default=8, help="jumlah worker paralel buat resolve names")
     args = parser.parse_args()
 
     check_python()
@@ -147,6 +162,9 @@ def main():
             info(f"index udah ada di {index_path.relative_to(ROOT)}, skip")
         else:
             build_index()
+
+    if args.resolve_names:
+        resolve_names(workers=args.workers)
 
     step("selesai")
     venv_rel = VENV.relative_to(ROOT)

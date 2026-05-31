@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import List, Optional, Dict
 import json
 import time
 import urllib.request
 import urllib.parse
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 
 COVALENT_RADII = {
@@ -90,7 +90,7 @@ def _pubchem_resolve(smiles):
         return None
 
 
-def resolve_names_batch(molecules, delay=0.2):
+def resolve_names_batch(molecules, workers=8, save_every=200):
     cache = _load_names_cache()
     to_resolve = []
     for mol in molecules:
@@ -108,23 +108,30 @@ def resolve_names_batch(molecules, delay=0.2):
     if not to_resolve:
         return cache
 
-    print(f"resolve {len(to_resolve)} nama dari PubChem...")
-    for i, mol in enumerate(to_resolve):
-        smiles = mol["smiles"]
-        if smiles in cache:
-            mol["name"] = cache[smiles]
-            continue
-        name = _pubchem_resolve(smiles)
-        if name:
-            mol["name"] = name
-            cache[smiles] = name
-        if (i + 1) % 50 == 0:
-            print(f"  {i + 1}/{len(to_resolve)}")
-            _save_names_cache(cache)
-        time.sleep(delay)
+    # dedup smiles dulu, biar molekul yg punya smiles sama gak di-fetch dua kali
+    unique_smiles = {}
+    for mol in to_resolve:
+        unique_smiles.setdefault(mol["smiles"], []).append(mol)
+
+    print(f"resolve {len(unique_smiles)} smiles unik dari PubChem (workers={workers})")
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(_pubchem_resolve, s): s for s in unique_smiles}
+        for fut in as_completed(futures):
+            smiles = futures[fut]
+            name = fut.result()
+            if name:
+                cache[smiles] = name
+                for mol in unique_smiles[smiles]:
+                    mol["name"] = name
+            done += 1
+            if done % save_every == 0:
+                _save_names_cache(cache)
+                print(f"  {done}/{len(unique_smiles)}")
 
     _save_names_cache(cache)
-    print(f"selesai. total {len(cache)} SMILES tercache.")
+    print(f"selesai. total {len(cache)} smiles tercache")
     return cache
 
 PROPERTIES_NAMES = [
