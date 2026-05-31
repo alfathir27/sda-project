@@ -36,20 +36,23 @@ Jari-jari kovalen disimpan dalam **hash map** (`COVALENT_RADII`) untuk lookup O(
 
 | Hash Map | Key → Value | Kegunaan |
 |----------|-------------|----------|
-| `_id_to_idx` | mol_id → array index | Lookup molekul by ID |
+| `meta` | mol_id → metadata | Lookup molekul by ID |
+| `formula_idx` | formula (Hill) → list mol_id | Cari molekul by rumus kimia (mis. `H2O`, `C6H6`) |
+| `smiles_idx` | SMILES → mol_id | Cari molekul by SMILES |
 | `COVALENT_RADII` | element → radius | Inferensi ikatan |
 | `SMILES_TO_NAME` | SMILES → nama | Resolusi nama lokal |
 | `names_cache.json` | SMILES → nama | Cache nama PubChem |
 | `ATOM_COLORS` | element → hex color | Warna node di frontend |
 
-Rantai lookup: `mol_id → hash map → index → array → molecule`. Total: **O(1)**.
+Rantai lookup: `query → hash map → mol_id → cache pickle / parse on-demand`. Total: **O(1)** untuk lookup, plus parse satu file `.xyz` saat detail dibuka pertama kali.
 
 ### Caching — Trade-off Waktu vs Ruang
 
 | Level | Format | Isi | Efek |
 |-------|--------|-----|------|
-| Pickle | Binary | Graf + properti lengkap | Startup: 30s → 2s |
-| JSON | Text | Hash map SMILES → nama | Hindari API call ulang |
+| Index | JSON | Metadata semua 134K molekul (formula, SMILES, nama, properti) | Startup ~1 detik, lookup O(1) |
+| Cache | Pickle | Molekul yang sudah pernah dibuka (graf + layout) | Detail jadi instan setelah parse pertama |
+| Names | JSON | Hash map SMILES → nama dari PubChem | Hindari API call ulang |
 
 ---
 
@@ -69,21 +72,25 @@ Proyek ini berfokus pada **pengelolaan graf** (konstruksi, representasi, layout,
 
 ```
 SDA/
+├── setup.py                    # Otomatisasi: venv, install deps, download dataset, build index
 ├── backend/
-│   ├── main.py              # FastAPI: API + static serving
-│   ├── qm9_loader.py        # Parser .xyz + hash map nama (PubChem)
-│   ├── graph_processor.py   # Konstruksi graf + algoritma layout 2D
-│   ├── data_manager.py      # Orkestrasi: cache (pickle/JSON), query O(1)
+│   ├── main.py                 # FastAPI: API + static serving
+│   ├── qm9_loader.py           # Parser .xyz + hash map nama (PubChem)
+│   ├── graph_processor.py      # Konstruksi graf + algoritma layout 2D
+│   ├── data_manager.py         # Lazy load via index, cache pickle, query O(1)
+│   ├── index_builder.py        # Scan 134K .xyz → hash map index
+│   ├── smiles_parser.py        # Parser SMILES untuk fallback render
 │   ├── requirements.txt
 │   └── static/
 │       ├── index.html
 │       ├── style.css
-│       └── app.js            # Cytoscape.js: rendering graf (adjacency list)
+│       └── app.js              # Cytoscape.js: rendering graf (adjacency list)
 └── data/
-    ├── qm9_raw/
+    ├── qm9_raw/                # 133.885 file .xyz
     └── qm9_processed/
-        ├── cache.pkl         # Serialisasi biner dataset
-        └── names_cache.json  # Hash map SMILES → nama
+        ├── index.json          # Hash map: formula/SMILES → mol_id + metadata
+        ├── cache.pkl           # Cache molekul yang sudah pernah dibuka
+        └── names_cache.json    # Hash map SMILES → nama
 ```
 
 ### API Endpoints
@@ -91,16 +98,23 @@ SDA/
 | Method | Path | Deskripsi | Kompleksitas |
 |--------|------|-----------|--------------|
 | GET | `/molecules?limit=&offset=` | Daftar molekul | O(limit) |
-| GET | `/molecules/{mol_id}` | Detail graf + properti | O(1) |
+| GET | `/molecules/{mol_id}` | Detail graf + properti (lazy parse) | O(1) cached, O(n²) parse pertama |
+| GET | `/search?q=` | Cari by formula / SMILES / substring | O(1) untuk formula & SMILES |
+| POST | `/render-formula` | Render graf naif dari formula (fallback) | O(n) + O(n³) layout |
+| POST | `/render-smiles` | Render graf dari SMILES (fallback) | O(n) parse + O(n³) layout |
 | POST | `/compare` | Bandingkan molekul | O(k) |
-| GET | `/properties/stats` | Statistik properti | O(n) |
+| GET | `/properties/stats` | Statistik 16 properti kuantum | O(n) |
 | POST | `/resolve-names` | Resolusi nama PubChem | O(m) + network |
 
 ### Fitur Frontend
 
-- **Molecule Library** — daftar dengan nama, formula, properti; paginasi + pencarian
+- **Daftar Molekul** — paginasi 134K molekul, search debounced (server-side)
+- **Search Tier**:
+  - Tier 1: cari di cache pickle (O(1))
+  - Tier 2: cari di full index hash map by formula/SMILES (O(1))
+  - Tier 3: render naif dari formula atau SMILES kalau gak ada di dataset
 - **2D Graph Viewer** — Cytoscape.js: zoom, pan, node berwarna per elemen
-- **Properties Panel** — 16 properti kuantum
+- **Properties Panel** — 16 properti kuantum (DFT)
 - **Compare Mode** — hingga 4 graf side-by-side
 
 ---
@@ -108,14 +122,14 @@ SDA/
 ## Cara Menjalankan
 
 ```bash
-# Setup
-cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+# Setup otomatis: bikin venv, install deps, download dataset (~83 MB), extract, build index
+python setup.py
 
 # Jalankan
-backend/.venv/bin/uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
+backend/.venv/bin/uvicorn main:app --app-dir backend --port 8000
 ```
 
-Buka `http://localhost:8000`. Untuk resolve nama molekul via PubChem (sekali saja):
+Buka `http://localhost:8000`. Untuk resolve nama molekul via PubChem (sekali saja, butuh menit):
 
 ```bash
 curl -X POST http://localhost:8000/resolve-names
