@@ -1,20 +1,20 @@
 # Pengembangan Aplikasi Web Interaktif untuk Visualisasi Graf Molekul dan Eksplorasi Properti Kuantum pada Dataset QM9
 
-Aplikasi web monolitik yang menerapkan konsep **Struktur Data dan Algoritma** — khususnya struktur graf, algoritma konstruksi graf, algoritma layout force-directed, hash map, dan caching — untuk memproses dan memvisualisasikan molekul dari dataset QM9 sebagai graf 2D interaktif.
+Aplikasi web monolitik yang menerapkan konsep **Struktur Data dan Algoritma**. Beberapa konsep yang dipakai meliputi struktur graf, algoritma pembentukan graf, algoritma layout berbasis gaya, hash map, dan strategi caching. Tujuannya adalah memproses lalu menggambar molekul dari dataset QM9 dalam bentuk graf 2D yang interaktif.
 
 ## Fokus SDA: Struktur Data dan Algoritma yang Diterapkan
 
 ### Struktur Data Graf (Adjacency List)
 
-Molekul direpresentasikan sebagai graf \( G = (V, E) \):
-- **Node** = atom (dengan atribut: elemen, koordinat, posisi 2D)
-- **Edge** = ikatan kimia (dengan bobot: jarak antar-atom)
+Setiap molekul digambarkan sebagai graf \( G = (V, E) \) dengan rincian:
+- **Node** = atom, lengkap dengan atribut elemen, koordinat 3D, dan posisi 2D.
+- **Edge** = ikatan kimia, beserta bobot berupa jarak antar atom.
 
-Representasi menggunakan **adjacency list** (NetworkX `nx.Graph`), dipilih karena graf molekul bersifat **sparse** — rata-rata degree ≈ 2, jauh di bawah n-1. Adjacency matrix O(n²) akan memboroskan memori.
+Implementasinya memakai **adjacency list** lewat NetworkX (`nx.Graph`). Pilihan ini diambil karena graf molekul tergolong **sparse**, dengan rata-rata derajat sekitar 2 saja. Kalau dipaksakan ke adjacency matrix berukuran O(n²), banyak slot yang kosong sehingga memori jadi terbuang sia-sia.
 
-### Algoritma Konstruksi Graf — O(n²)
+### Algoritma Konstruksi Graf, O(n²)
 
-Dataset QM9 hanya menyediakan koordinat 3D atom, **tanpa informasi ikatan**. Edge dikonstruksi dengan algoritma berbasis jarak:
+Pada dataset QM9, file mentah yang tersedia hanya memuat koordinat 3D atom **tanpa keterangan ikatan**. Karena itu, edge harus dibentuk sendiri lewat algoritma berbasis jarak antar atom:
 
 ```
 INFER-BONDS(atoms, coords, tolerance=0.45):
@@ -25,14 +25,14 @@ INFER-BONDS(atoms, coords, tolerance=0.45):
               add_edge(i, j, weight=dist)
 ```
 
-Jari-jari kovalen disimpan dalam **hash map** (`COVALENT_RADII`) untuk lookup O(1).
+Nilai jari-jari kovalen tiap elemen disimpan dalam **hash map** bernama `COVALENT_RADII`, sehingga proses pengambilan datanya berlangsung dalam waktu konstan O(1).
 
-### Algoritma Layout 2D — Force-Directed
+### Algoritma Layout 2D (Force-Directed)
 
-1. **Kamada-Kawai** (prioritas): Meminimalkan energi sistem pegas. Panjang ideal antar-node proporsional terhadap shortest path. Kompleksitas: O(n³) untuk shortest path + O(n²) per iterasi Newton-Raphson.
-2. **Fruchterman-Reingold** (fallback): Gaya tarik antar tetangga + gaya tolak pairwise. Digunakan jika graf tidak terhubung. Kompleksitas: O(iter × n²).
+1. **Kamada-Kawai** sebagai pilihan utama. Algoritma ini bekerja dengan meminimalkan energi sistem pegas, di mana panjang ideal antar node dibuat sebanding dengan shortest path. Kompleksitasnya O(n³) untuk perhitungan shortest path dan O(n²) per iterasi Newton-Raphson.
+2. **Fruchterman-Reingold** dipakai sebagai cadangan ketika graf tidak terhubung. Algoritma ini mengkombinasikan gaya tarik antar tetangga dengan gaya tolak pairwise. Kompleksitasnya O(iter × n²).
 
-### Hash Map — Pencarian O(1)
+### Hash Map (Pencarian O(1))
 
 | Hash Map | Key → Value | Kegunaan |
 |----------|-------------|----------|
@@ -44,27 +44,27 @@ Jari-jari kovalen disimpan dalam **hash map** (`COVALENT_RADII`) untuk lookup O(
 | `names_cache.json` | SMILES → nama | Cache nama PubChem |
 | `ATOM_COLORS` | element → hex color | Warna node di frontend |
 
-Rantai lookup: `query → hash map → mol_id → cache pickle / parse on-demand`. Total: **O(1)** untuk lookup, plus parse satu file `.xyz` saat detail dibuka pertama kali.
+Rantai akses datanya kira-kira begini: `query → hash map → mol_id → cache pickle / parse on-demand`. Hasil akhirnya berkecepatan **O(1)** untuk lookup, ditambah satu kali parse file `.xyz` ketika molekul dibuka pertama kali.
 
-### Caching — Trade-off Waktu vs Ruang
+### Caching (Trade-off Waktu vs Ruang)
 
 | Level | Format | Isi | Efek |
 |-------|--------|-----|------|
-| Index | JSON | Metadata semua 134K molekul (formula, SMILES, nama, properti) | Startup ~1 detik, lookup O(1) |
-| Cache | Pickle | Molekul yang sudah pernah dibuka (graf + layout) | Detail jadi instan setelah parse pertama |
-| Names | JSON | Hash map SMILES → nama dari PubChem | Hindari API call ulang |
+| Index | JSON | Metadata seluruh 134K molekul (formula, SMILES, nama, properti) | Startup sekitar 1 detik, lookup tetap O(1) |
+| Cache | Pickle | Molekul yang sudah pernah diakses pengguna (graf + layout) | Detail jadi langsung tampil setelah parse pertama |
+| Names | JSON | Hash map SMILES ke nama hasil resolusi PubChem | Mencegah pemanggilan API berulang kali |
 
 ---
 
 ## Tentang Dataset QM9
 
-**QM9** berisi **133.885 molekul organik kecil** (hingga 9 atom berat: C, N, O, F) dengan 16 properti kuantum (DFT B3LYP/6-31G(2df,2p)). Paper rujukan:
+Dataset **QM9** memuat **133.885 molekul organik kecil** dengan maksimal 9 atom berat (C, N, O, F). Setiap molekul disertai 16 properti kuantum hasil hitungan DFT pada level B3LYP/6-31G(2df,2p). Paper rujukan utamanya:
 
 > **Adaptive edge-aware graph convolutional with multi-task learning for simultaneous prediction of material properties**
 >
 > Scopus: https://www.scopus.com/pages/publications/105028524571
 
-Proyek ini berfokus pada **pengelolaan graf** (konstruksi, representasi, layout, visualisasi), bukan pada model prediktif.
+Cakupan proyek ini berhenti di tahap **pengelolaan graf**, mulai dari konstruksi, representasi, layout, sampai visualisasi. Pengembangan model prediktif tidak masuk lingkup pembahasan.
 
 ---
 
@@ -108,14 +108,14 @@ SDA/
 
 ### Fitur Frontend
 
-- **Daftar Molekul** — paginasi 134K molekul, search debounced (server-side)
+- **Daftar Molekul**: paginasi mencakup 134 ribu molekul, kolom pencarian dengan debounce di sisi server.
 - **Search Tier**:
-  - Tier 1: cari di cache pickle (O(1))
-  - Tier 2: cari di full index hash map by formula/SMILES (O(1))
-  - Tier 3: render naif dari formula atau SMILES kalau gak ada di dataset
-- **2D Graph Viewer** — Cytoscape.js: zoom, pan, node berwarna per elemen
-- **Properties Panel** — 16 properti kuantum (DFT)
-- **Compare Mode** — hingga 4 graf side-by-side
+  - Tier 1: cek dulu di cache pickle (O(1))
+  - Tier 2: cari di hash map indeks penuh berdasarkan formula atau SMILES (O(1))
+  - Tier 3: render naif dari formula atau SMILES kalau molekul yang dicari tidak ada di dataset
+- **2D Graph Viewer**: ditangani Cytoscape.js, lengkap dengan zoom, pan, dan node yang diwarnai per elemen.
+- **Properties Panel**: menampilkan 16 properti kuantum hasil DFT.
+- **Compare Mode**: pengguna bisa menampilkan sampai 4 graf secara berdampingan.
 
 ---
 
@@ -129,7 +129,7 @@ python setup.py
 backend/.venv/bin/uvicorn main:app --app-dir backend --port 8000
 ```
 
-Buka `http://localhost:8000`. Untuk resolve nama molekul via PubChem (sekali saja, butuh menit):
+Setelah server hidup, akses lewat `http://localhost:8000`. Bila ingin meresolve nama molekul melalui PubChem (cukup dijalankan sekali, prosesnya bisa memakan waktu beberapa menit):
 
 ```bash
 curl -X POST http://localhost:8000/resolve-names
@@ -137,7 +137,7 @@ curl -X POST http://localhost:8000/resolve-names
 
 ## Dependensi
 
-- **NetworkX** — representasi graf (adjacency list), algoritma layout
-- **NumPy** — array koordinat, jarak Euclidean
-- **FastAPI + Uvicorn** — web server
-- **Cytoscape.js** — rendering graf interaktif
+- **NetworkX**: representasi graf berbasis adjacency list dan algoritma layout.
+- **NumPy**: array koordinat dan perhitungan jarak Euclidean.
+- **FastAPI + Uvicorn**: server web.
+- **Cytoscape.js**: rendering graf interaktif di sisi peramban.
