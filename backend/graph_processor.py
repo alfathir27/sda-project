@@ -1,10 +1,9 @@
-from typing import List, Tuple
 import numpy as np
 import networkx as nx
 from qm9_loader import COVALENT_RADII
 
 
-def infer_bonds(atoms: List[str], coords: np.ndarray, tolerance: float = 0.45):
+def infer_bonds(atoms, coords, tolerance=0.45):
     n = len(atoms)
     bonds = []
     for i in range(n):
@@ -17,7 +16,7 @@ def infer_bonds(atoms: List[str], coords: np.ndarray, tolerance: float = 0.45):
     return bonds
 
 
-def compute_2d_layout(atoms: List[str], bonds: List[Tuple[int, int, float]], seed: int = 42):
+def compute_2d_layout(atoms, bonds, seed=42):
     G = nx.Graph()
     for i, atom in enumerate(atoms):
         G.add_node(i, element=atom)

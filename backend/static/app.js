@@ -7,7 +7,6 @@ const LIMIT = 20;
 let currentMol = null;
 let compareIds = [];
 let showCompare = false;
-let cyInstance = null;
 
 const ATOM_COLORS = {
   H: '#e2e8f0', C: '#64748b', N: '#3b82f6', O: '#ef4444', F: '#22c55e',
@@ -23,14 +22,12 @@ const PROP_LABELS = {
   H_Hartree: 'H (Hartree)', G_Hartree: 'G (Hartree)', Cv_cal_mol_K: 'Cv (cal/mol·K)',
 };
 
-// --- API ---
 async function apiFetch(url, opts) {
   const res = await fetch(API + url, opts);
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
 
-// --- Molecule list ---
 let searchQuery = '';
 let searchTimer = null;
 
@@ -82,7 +79,7 @@ function nextPage() { if (offset + LIMIT < total) { offset += LIMIT; loadMolecul
 
 function onSearch() {
   searchQuery = document.getElementById('search-input').value.trim();
-  // debounce 250ms supaya gak hit server tiap keystroke
+  // debounce biar gak hit server tiap keystroke
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     offset = 0;
@@ -96,7 +93,7 @@ async function renderFromSmiles() {
   help.innerHTML = '';
   if (!q) return;
 
-  // pure-formula (mis. H2O) -> render via endpoint formula (graf naif + warning)
+  // kalau pure formula (H2O), pakai endpoint formula
   const isFormula = /^([A-Z][a-z]?\d*)+$/.test(q);
   const endpoint = isFormula ? '/render-formula' : '/render-smiles';
   const body = isFormula ? { formula: q } : { smiles: q };
@@ -112,12 +109,12 @@ async function renderFromSmiles() {
     renderMolecule();
     showView('mol');
   } catch (e) {
-    help.innerHTML = `<span style="color:#dc2626">Input tidak valid.</span> Contoh: <code>H2O</code>, <code>C6H6</code>, atau SMILES <code>CCO</code>, <code>c1ccccc1</code>.`;
+    help.innerHTML = `<span style="color:#dc2626">input tidak valid.</span> contoh: <code>H2O</code>, <code>C6H6</code>, atau SMILES <code>CCO</code>, <code>c1ccccc1</code>.`;
     showView('empty');
   }
 }
 
-// --- Select molecule ---
+// pilih molekul
 async function selectMol(id) {
   showView('loading');
   try {
@@ -137,33 +134,33 @@ function showView(view) {
   document.getElementById('compare-view').style.display = view === 'compare' ? '' : 'none';
 }
 
-// --- Render molecule ---
+// render molekul
 function renderMolecule() {
   if (!currentMol) return;
   document.getElementById('mol-title').textContent = currentMol.name || currentMol.mol_id || currentMol.formula;
   document.getElementById('mol-subtitle').textContent =
     `${currentMol.name ? (currentMol.mol_id ? currentMol.mol_id + ' · ' : '') : ''}${currentMol.formula} · ${currentMol.n_atoms} atom · ${currentMol.edges.length} ikatan${currentMol.smiles ? ' · SMILES: ' + currentMol.smiles : ''}`;
 
-  // banner warning untuk graf sintetik (dari formula / SMILES)
+  // banner buat graf hasil render dari notasi
   const banner = document.getElementById('mol-warning');
   if (currentMol.warning) {
     banner.style.display = '';
-    banner.textContent = '⚠ ' + currentMol.warning;
+    banner.textContent = '[!] ' + currentMol.warning;
   } else if (currentMol.synthetic) {
     banner.style.display = '';
-    banner.textContent = '⚠ Graf disintesis dari notasi. Tidak ada data koordinat 3D maupun properti kuantum.';
+    banner.textContent = '[!] graf disintesis dari notasi, tidak ada data koordinat 3D maupun properti kuantum';
   } else {
     banner.style.display = 'none';
   }
 
-  // tombol compare cuma masuk akal kalau punya mol_id
+  // tombol compare cuma muncul kalau punya mol_id
   const btn = document.getElementById('btn-add-compare');
   if (!currentMol.mol_id) {
     btn.style.display = 'none';
   } else {
     btn.style.display = '';
     const inCompare = compareIds.includes(currentMol.mol_id);
-    btn.textContent = inCompare ? '✓ Sudah dibandingkan' : '+ Tambah ke pembanding';
+    btn.textContent = inCompare ? 'sudah dibandingkan' : '+ tambah ke pembanding';
     btn.className = inCompare ? 'btn btn-primary' : 'btn btn-outline';
   }
 
@@ -223,7 +220,7 @@ function renderProps(containerId, props) {
     `).join('');
 }
 
-// --- Compare ---
+// compare
 function toggleCompareId() {
   if (!currentMol) return;
   const id = currentMol.mol_id;
@@ -302,5 +299,5 @@ async function renderCompare() {
   });
 }
 
-// --- Init ---
+// init
 loadMolecules();

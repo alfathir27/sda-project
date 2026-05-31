@@ -4,8 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List
-import networkx as nx
 
 from data_manager import dataset
 from qm9_loader import resolve_names_batch, hill_formula
@@ -29,21 +27,20 @@ def root():
 
 
 @app.get("/molecules")
-def list_molecules(limit: int = 50, offset: int = 0):
+def list_molecules(limit=50, offset=0):
     return dataset.list_molecules(limit, offset)
 
 
 @app.get("/molecules/{mol_id}")
-def get_molecule(mol_id: str):
+def get_molecule(mol_id):
     mol = dataset.get_molecule(mol_id)
     if not mol:
-        raise HTTPException(status_code=404, detail="Molecule not found")
+        raise HTTPException(status_code=404, detail="molekul tidak ditemukan")
     return mol
 
 
 @app.get("/search")
-def search(q: str, limit: int = 50):
-    """Cari berdasarkan formula (Hill, O(1)), SMILES (O(1)), atau substring (O(n))."""
+def search(q, limit=50):
     return dataset.search(q, limit)
 
 
@@ -56,19 +53,14 @@ class RenderFormulaRequest(BaseModel):
 
 
 @app.post("/render-smiles")
-def render_smiles(req: RenderRequest):
-    """
-    Tier 3 fallback: render graf dari SMILES tanpa data koordinat / properti.
-    Cuma struktur ikatan + layout 2D.
-    """
+def render_smiles(req):
     try:
         parsed = parse_smiles(req.smiles)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"SMILES invalid: {e}")
+        raise HTTPException(status_code=400, detail=f"smiles invalid: {e}")
 
     atoms = parsed["atoms"]
     raw_bonds = parsed["bonds"]
-    # bonds untuk layout butuh format (i, j, weight) — pakai 1.0 untuk semua
     layout_bonds = [(i, j, 1.0) for i, j, _order in raw_bonds]
     layout = compute_2d_layout(atoms, layout_bonds)
 
@@ -95,12 +87,7 @@ def render_smiles(req: RenderRequest):
 
 
 @app.post("/render-formula")
-def render_formula(req: RenderFormulaRequest):
-    """
-    Tier 3b: render graf naif dari formula.
-    Formula tidak menentukan ikatan -> pakai heuristik:
-    atom non-H dirantai linier, atom H di-distribute ke atom non-H.
-    """
+def render_formula(req):
     import re
     sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
     s = req.formula.translate(sub).strip()
@@ -111,23 +98,19 @@ def render_formula(req: RenderFormulaRequest):
         normalized = el[0].upper() + (el[1:].lower() if len(el) > 1 else "")
         atoms_list.extend([normalized] * (int(cnt) if cnt else 1))
     if not atoms_list:
-        raise HTTPException(status_code=400, detail="Formula tidak valid")
+        raise HTTPException(status_code=400, detail="formula tidak valid")
 
-    # pisah non-H dan H
     heavy = [(i, el) for i, el in enumerate(atoms_list) if el != "H"]
     hydrogens = [i for i, el in enumerate(atoms_list) if el == "H"]
     bonds = []
     if len(heavy) >= 2:
-        # rantai linier antar atom berat
         for k in range(len(heavy) - 1):
             bonds.append((heavy[k][0], heavy[k + 1][0], 1.0))
-    # distribusi H ke atom non-H secara round-robin
     if heavy:
         for k, h_idx in enumerate(hydrogens):
             target = heavy[k % len(heavy)][0]
             bonds.append((target, h_idx, 1.0))
     elif len(hydrogens) >= 2:
-        # khusus kasus aneh (cuma H), rantaikan saja
         for k in range(len(hydrogens) - 1):
             bonds.append((hydrogens[k], hydrogens[k + 1], 1.0))
 
@@ -151,7 +134,7 @@ def render_formula(req: RenderFormulaRequest):
         "edges": edges,
         "properties": {},
         "synthetic": True,
-        "warning": "Struktur ikatan tidak diketahui dari formula. Gambar ini hanya representasi naif (rantai linier antar atom berat + H tersebar).",
+        "warning": "struktur ikatan tidak bisa ditentukan dari formula. ini cuma gambaran kasar.",
     }
 
 

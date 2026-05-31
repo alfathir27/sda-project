@@ -1,19 +1,10 @@
-"""
-QM9Dataset — lazy-load via hash map index.
-
-Strategi:
-  - Startup: load index.json (3 hash map), bukan parse semua xyz. ~100ms.
-  - Lookup: O(1) by mol_id, formula, atau smiles via index.
-  - Detail molekul: parse xyz on-demand, cache hasil di pickle (per-molekul).
-  - Cache pickle berisi dict: mol_id -> molekul lengkap (graf + properti).
-
-Ini menggantikan pendekatan lama yang pre-parse 2000 molekul ke pickle besar.
-"""
+# QM9Dataset - lazy load via hash map index
+# startup cuma load index.json, parse xyz on-demand pas user buka detail
+# hasil parse di-cache ke pickle biar akses kedua langsung dari memori
 
 import pickle
 import threading
 from pathlib import Path
-from typing import List, Dict, Optional
 import numpy as np
 
 from qm9_loader import (
@@ -33,22 +24,20 @@ CACHE_PATH = ROOT / "data" / "qm9_processed" / "cache.pkl"
 
 class QM9Dataset:
     def __init__(self):
-        self._index: Dict = {}
-        self._cache: Dict[str, Dict] = {}     # mol_id -> molekul lengkap
-        self._lock = threading.Lock()         # protect cache + pickle write
+        self._index = {}
+        self._cache = {}
+        self._lock = threading.Lock()
         self._load_index()
         self._load_cache()
-
-    # ---------- bootstrap ----------
 
     def _load_index(self):
         if not INDEX_PATH.exists():
             raise FileNotFoundError(
-                f"Index tidak ditemukan di {INDEX_PATH}. "
-                f"Jalankan `python setup.py` dulu untuk build index."
+                f"index belum ada di {INDEX_PATH}. "
+                f"jalanin `python setup.py` dulu"
             )
         self._index = load_index(INDEX_PATH)
-        # apply nama PubChem dari names_cache.json ke meta
+        # merge nama dari PubChem cache ke meta
         names_cache = _load_names_cache()
         if names_cache:
             for mol_id, m in self._index["meta"].items():
@@ -61,7 +50,7 @@ class QM9Dataset:
                 with open(CACHE_PATH, 'rb') as f:
                     self._cache = pickle.load(f)
             except Exception as e:
-                print(f"Cache pickle corrupt ({e}), mulai fresh")
+                print(f"cache rusak ({e}), mulai dari kosong")
                 self._cache = {}
 
     def _save_cache(self):
@@ -71,14 +60,12 @@ class QM9Dataset:
 
     # ---------- core lookup ----------
 
-    def get_molecule(self, mol_id: str) -> Optional[Dict]:
-        """Lookup O(1) by mol_id. Parse on-demand kalau belum di-cache."""
+    def get_molecule(self, mol_id):
         if mol_id in self._cache:
             return self._cache[mol_id]
         if mol_id not in self._index["meta"]:
             return None
         with self._lock:
-            # double-check setelah acquire lock
             if mol_id in self._cache:
                 return self._cache[mol_id]
             mol = self._build_molecule(mol_id)
@@ -88,8 +75,7 @@ class QM9Dataset:
             self._save_cache()
             return mol
 
-    def _build_molecule(self, mol_id: str) -> Optional[Dict]:
-        """Parse xyz + infer bonds + layout 2D. Heavy step (~10-50ms per molekul)."""
+    def _build_molecule(self, mol_id):
         path = RAW_DIR / f"{mol_id}.xyz"
         if not path.exists():
             return None
@@ -120,7 +106,6 @@ class QM9Dataset:
             for i, j, dist in bonds
         ]
 
-        # nama dari index (sudah merged dengan PubChem cache)
         meta = self._index["meta"].get(mol_id, {})
         return {
             "mol_id": mol_id,
@@ -135,10 +120,9 @@ class QM9Dataset:
 
     # ---------- list / search / compare / stats ----------
 
-    def list_molecules(self, limit: int = 50, offset: int = 0):
-        """Listing langsung dari index. O(limit) — tidak parse xyz."""
+    def list_molecules(self, limit=50, offset=0):
         meta = self._index["meta"]
-        ids = list(meta.keys())  # urutan insert (= urutan file sorted)
+        ids = list(meta.keys())
         total = len(ids)
         items = []
         for mol_id in ids[offset:offset + limit]:
@@ -155,17 +139,12 @@ class QM9Dataset:
             })
         return {"total": total, "items": items}
 
-    def search(self, query: str, limit: int = 50):
-        """
-        Cari berdasarkan formula (Hill) -> O(1) hash map lookup.
-        Fallback: substring match di mol_id / name / smiles -> O(n).
-        """
+    def search(self, query, limit=50):
         q = query.strip()
         if not q:
             return {"total": 0, "items": []}
 
         meta = self._index["meta"]
-        # Tier 1: exact formula match (O(1))
         formula_idx = self._index["formula_idx"]
         normalized = self._normalize_formula(q)
         if normalized in formula_idx:
@@ -176,13 +155,12 @@ class QM9Dataset:
                 "items": [self._summary(mol_id) for mol_id in ids],
             }
 
-        # Tier 1b: exact smiles match (O(1))
         smiles_idx = self._index["smiles_idx"]
         if q in smiles_idx:
             mol_id = smiles_idx[q]
             return {"total": 1, "matched_by": "smiles", "items": [self._summary(mol_id)]}
 
-        # Tier 2: substring match (O(n)) — fallback nama / mol_id
+        # fallback: cocokin substring di mol_id atau name
         ql = q.lower()
         items = []
         for mol_id, m in meta.items():
@@ -192,13 +170,10 @@ class QM9Dataset:
                     break
         return {"total": len(items), "matched_by": "substring", "items": items}
 
-    def _normalize_formula(self, s: str) -> str:
-        """Terima 'h2o', 'H2O', 'h₂o' dll, normalisasi ke Hill."""
-        # ubah subscript unicode -> digit, parse element+count, bangun ulang
+    def _normalize_formula(self, s):
+        # terima h2o, H2O, atau h₂o, normalisasi ke notasi Hill
         sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
         s = s.translate(sub).strip()
-        # parse pasangan (Element)(count?) — case-insensitive, lalu normalisasi
-        # ke convention: huruf 1 uppercase, huruf 2 lowercase (Cl, Br, dll)
         import re
         atoms = []
         for el, cnt in re.findall(r"([A-Za-z][a-z]?)(\d*)", s):
@@ -211,7 +186,7 @@ class QM9Dataset:
             return s
         return hill_formula(atoms)
 
-    def _summary(self, mol_id: str) -> Dict:
+    def _summary(self, mol_id):
         m = self._index["meta"][mol_id]
         props = m.get("properties", {})
         return {
@@ -224,11 +199,10 @@ class QM9Dataset:
             "gap": props.get("gap_Hartree"),
         }
 
-    def compare(self, mol_ids: List[str]):
+    def compare(self, mol_ids):
         return [self.get_molecule(mid) for mid in mol_ids if mid in self._index["meta"]]
 
     def stats(self):
-        """Statistik 16 properti, dihitung dari index (sekali O(n) saat startup-cache)."""
         if hasattr(self, "_stats_cached"):
             return self._stats_cached
         meta = self._index["meta"]
@@ -251,7 +225,6 @@ class QM9Dataset:
 
     @property
     def molecules(self):
-        """Backward-compat: list semua meta (untuk resolve_names_batch)."""
         return [
             {**m, "mol_id": mol_id}
             for mol_id, m in self._index["meta"].items()

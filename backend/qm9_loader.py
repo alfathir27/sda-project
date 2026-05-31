@@ -56,28 +56,28 @@ SMILES_TO_NAME = {
 }
 
 
-def smiles_to_name(smiles: str) -> Optional[str]:
+def smiles_to_name(smiles):
     return SMILES_TO_NAME.get(smiles)
 
 
 NAMES_CACHE_PATH = Path(__file__).parent.parent / "data" / "qm9_processed" / "names_cache.json"
 
 
-def _load_names_cache() -> Dict[str, str]:
+def _load_names_cache():
     if NAMES_CACHE_PATH.exists():
         with open(NAMES_CACHE_PATH, 'r') as f:
             return json.load(f)
     return {}
 
 
-def _save_names_cache(cache: Dict[str, str]):
+def _save_names_cache(cache):
     NAMES_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(NAMES_CACHE_PATH, 'w') as f:
         json.dump(cache, f, indent=2)
 
 
-def _pubchem_resolve(smiles: str) -> Optional[str]:
-    """Resolve a single SMILES to IUPAC name via PubChem PUG REST API."""
+def _pubchem_resolve(smiles):
+    # ambil nama IUPAC dari PubChem REST API
     try:
         encoded = urllib.parse.quote(smiles, safe='')
         url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded}/property/IUPACName,Title/JSON"
@@ -90,8 +90,7 @@ def _pubchem_resolve(smiles: str) -> Optional[str]:
         return None
 
 
-def resolve_names_batch(molecules: List[Dict], delay: float = 0.2) -> Dict[str, str]:
-    """Resolve names for molecules that don't have one yet. Returns updated cache."""
+def resolve_names_batch(molecules, delay=0.2):
     cache = _load_names_cache()
     to_resolve = []
     for mol in molecules:
@@ -109,7 +108,7 @@ def resolve_names_batch(molecules: List[Dict], delay: float = 0.2) -> Dict[str, 
     if not to_resolve:
         return cache
 
-    print(f"Resolving names for {len(to_resolve)} molecules via PubChem API...")
+    print(f"resolve {len(to_resolve)} nama dari PubChem...")
     for i, mol in enumerate(to_resolve):
         smiles = mol["smiles"]
         if smiles in cache:
@@ -120,12 +119,12 @@ def resolve_names_batch(molecules: List[Dict], delay: float = 0.2) -> Dict[str, 
             mol["name"] = name
             cache[smiles] = name
         if (i + 1) % 50 == 0:
-            print(f"  Resolved {i + 1}/{len(to_resolve)}...")
+            print(f"  {i + 1}/{len(to_resolve)}")
             _save_names_cache(cache)
         time.sleep(delay)
 
     _save_names_cache(cache)
-    print(f"Done. Resolved {len(cache)} unique SMILES names total.")
+    print(f"selesai. total {len(cache)} SMILES tercache.")
     return cache
 
 PROPERTIES_NAMES = [
@@ -135,9 +134,9 @@ PROPERTIES_NAMES = [
 ]
 
 
-# notasi Hill: C dulu, lalu H, sisanya alfabet. standar buat formula molekul organik
-def hill_formula(atoms: List[str]) -> str:
-    counts: Dict[str, int] = {}
+# notasi Hill: C dulu, lalu H, sisanya alfabet
+def hill_formula(atoms):
+    counts = {}
     for a in atoms:
         counts[a] = counts.get(a, 0) + 1
     keys = []
@@ -151,15 +150,14 @@ def hill_formula(atoms: List[str]) -> str:
     return ''.join(f"{k}{counts[k] if counts[k] > 1 else ''}" for k in keys)
 
 
-# baca header file xyz tanpa parse koordinat. ringan, dipakai pas build index
-def parse_xyz_meta(path: Path) -> dict:
+# baca header xyz tanpa parse koordinat, dipakai pas build index
+def parse_xyz_meta(path):
     with open(path, 'r') as f:
         lines = [line.strip() for line in f if line.strip()]
     n_atoms = int(lines[0])
 
-    # parse 16 properti dari line 2 (sama seperti parse_xyz tapi tanpa coords)
     props_line = lines[1].split()
-    props: Dict[str, Optional[float]] = {}
+    props = {}
     prop_keys = PROPERTIES_NAMES[1:]
     for i, name in enumerate(prop_keys):
         idx = i + 1
@@ -189,20 +187,18 @@ def parse_xyz_meta(path: Path) -> dict:
     }
 
 
-def parse_xyz(path: Path) -> dict:
+def parse_xyz(path):
     with open(path, 'r') as f:
         lines = [line.strip() for line in f if line.strip()]
 
     n_atoms = int(lines[0])
 
-    # QM9 format: line 2 starts with 'gdb' tag, then index, then 15 numeric properties
-    # Example: gdb 1   157.7118  157.70997  157.70699  0.  13.21  -0.3877  ...
+    # baris 2 di QM9: tag 'gdb', index, 15 properti numerik
     props_line = lines[1].split()
     props = {}
-    # Skip 'gdb' tag at index 0, then map properties starting from index 1
-    prop_keys = PROPERTIES_NAMES[1:]  # skip 'tag', keep index + 15 properties
+    prop_keys = PROPERTIES_NAMES[1:]
     for i, name in enumerate(prop_keys):
-        idx = i + 1  # offset by 1 to skip 'gdb'
+        idx = i + 1
         if idx < len(props_line):
             try:
                 val = props_line[idx].replace('*^', 'e')
@@ -220,11 +216,11 @@ def parse_xyz(path: Path) -> dict:
         coords.append([float(x) for x in parts[1:4]])
 
     if not atoms:
-        raise ValueError(f"No atoms found in {path}")
+        raise ValueError(f"file kosong: {path}")
 
     coords = np.array(coords)
 
-    # Extract SMILES from the file (3rd line from end, first token)
+    # SMILES ada di baris ke-3 dari belakang
     smiles = None
     name = None
     if len(lines) >= n_atoms + 5:
