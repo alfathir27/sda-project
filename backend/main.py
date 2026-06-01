@@ -1,8 +1,8 @@
 from pathlib import Path
+import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from data_manager import dataset
@@ -21,18 +21,13 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-def root():
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
-
-
 @app.get("/molecules")
 def list_molecules(limit: int = 50, offset: int = 0):
     return dataset.list_molecules(limit, offset)
 
 
 @app.get("/molecules/{mol_id}")
-def get_molecule(mol_id):
+def get_molecule(mol_id: str):
     mol = dataset.get_molecule(mol_id)
     if not mol:
         raise HTTPException(status_code=404, detail="molekul tidak ditemukan")
@@ -40,7 +35,7 @@ def get_molecule(mol_id):
 
 
 @app.get("/search")
-def search(q, limit=50):
+def search(q: str, limit: int = 50):
     return dataset.search(q, limit)
 
 
@@ -53,7 +48,7 @@ class RenderFormulaRequest(BaseModel):
 
 
 @app.post("/render-smiles")
-def render_smiles(req):
+def render_smiles(req: RenderRequest):
     try:
         parsed = parse_smiles(req.smiles)
     except ValueError as e:
@@ -87,8 +82,7 @@ def render_smiles(req):
 
 
 @app.post("/render-formula")
-def render_formula(req):
-    import re
+def render_formula(req: RenderFormulaRequest):
     sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
     s = req.formula.translate(sub).strip()
     atoms_list = []
@@ -139,7 +133,7 @@ def render_formula(req):
 
 
 class CompareRequest(BaseModel):
-    ids: List[str]
+    ids: list[str]
 
 
 @app.post("/compare")

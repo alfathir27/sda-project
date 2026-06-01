@@ -88,7 +88,7 @@ SDA/
 └── data/
     ├── qm9_raw/                # 133.885 file .xyz
     └── qm9_processed/
-        ├── index.json          # Hash map: formula/SMILES -> mol_id + metadata
+        ├── index.json          # Hash map: formula/SMILES -> mol_id + metadata (~63 MB)
         ├── cache.pkl           # Cache molekul yang sudah pernah dibuka
         └── names_cache.json    # Hash map SMILES -> nama
 ```
@@ -104,15 +104,15 @@ SDA/
 | POST | `/render-smiles` | Render graf dari SMILES (fallback) | O(n) parse + O(n^3) layout |
 | POST | `/compare` | Bandingkan molekul | O(k) |
 | GET | `/properties/stats` | Statistik 16 properti kuantum | O(n) |
-| POST | `/resolve-names` | Resolusi nama PubChem | O(m) + network |
 
 ### Fitur Frontend
 
 - **Daftar Molekul**: paginasi mencakup 134 ribu molekul, kolom pencarian dengan debounce di sisi server.
 - **Search Tier**:
-  - Tier 1: cek dulu di cache pickle (O(1))
-  - Tier 2: cari di hash map indeks penuh berdasarkan formula atau SMILES (O(1))
-  - Tier 3: render naif dari formula atau SMILES kalau molekul yang dicari tidak ada di dataset
+  - Tier 1: cocokin formula Hill di `formula_idx` (O(1))
+  - Tier 1b: cocokin SMILES di `smiles_idx` (O(1))
+  - Tier 2: substring `mol_id` sebagai fallback (O(n))
+  - Render naif dari formula/SMILES via tombol "Render dari Notasi" kalau molekul tidak ada di dataset
 - **2D Graph Viewer**: ditangani Cytoscape.js, lengkap dengan zoom, pan, dan node yang diwarnai per elemen.
 - **Properties Panel**: menampilkan 16 properti kuantum hasil DFT.
 - **Compare Mode**: pengguna bisa menampilkan sampai 4 graf secara berdampingan.
@@ -129,11 +129,7 @@ python setup.py
 backend/.venv/bin/uvicorn main:app --app-dir backend --port 8000
 ```
 
-Setelah server hidup, akses lewat `http://localhost:8000`. Bila ingin meresolve nama molekul melalui PubChem (cukup dijalankan sekali, prosesnya bisa memakan waktu beberapa menit):
-
-```bash
-curl -X POST http://localhost:8000/resolve-names
-```
+Setelah server hidup, akses lewat `http://localhost:8000`.
 
 ## Dependensi
 

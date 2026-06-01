@@ -53,10 +53,6 @@ SMILES_TO_NAME = {
 }
 
 
-def smiles_to_name(smiles):
-    return SMILES_TO_NAME.get(smiles)
-
-
 NAMES_CACHE_PATH = Path(__file__).parent.parent / "data" / "qm9_processed" / "names_cache.json"
 
 
@@ -141,7 +137,7 @@ def parse_xyz_meta(path):
         "n_atoms": n_atoms,
         "formula": hill_formula(atoms),
         "smiles": smiles,
-        "name": smiles_to_name(smiles) if smiles else None,
+        "name": SMILES_TO_NAME.get(smiles) if smiles else None,
         "properties": props,
     }
 
@@ -186,7 +182,7 @@ def parse_xyz(path):
         smiles_line = lines[n_atoms + 3].split()
         if smiles_line:
             smiles = smiles_line[0]
-            name = smiles_to_name(smiles)
+            name = SMILES_TO_NAME.get(smiles)
 
     return {
         "mol_id": path.stem,

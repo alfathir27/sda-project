@@ -28,7 +28,8 @@ def compute_2d_layout(atoms, bonds, seed=42):
 
     try:
         pos = nx.kamada_kawai_layout(G)
-    except Exception:
+    except (nx.NetworkXError, ValueError):
+        # Kamada-Kawai gagal pada graf tidak terhubung — fallback ke Fruchterman-Reingold
         pos = nx.spring_layout(G, seed=seed, k=2.0)
 
     xs = [p[0] for p in pos.values()]

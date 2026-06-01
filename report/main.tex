@@ -10,6 +10,7 @@
 \usepackage{enumitem}
 \usepackage{amsmath, amssymb}
 \usepackage{hyperref}
+\usepackage{xurl}  % izinkan URL break di sembarang karakter
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage[section]{placeins}  % FloatBarrier sebelum tiap section, agar tabel/gambar tidak terselip
@@ -48,6 +49,11 @@
 
 \onehalfspacing
 
+% toleransi spacing antar kata supaya identifier panjang seperti
+% formula\_idx, smiles\_idx, dan path file tidak overflow ke margin
+\sloppy
+\emergencystretch=3em
+
 % Jarak antar baris tabel agar lebih lega
 \renewcommand{\arraystretch}{1.4}
 
@@ -69,6 +75,7 @@
     
     {\normalsize\bfseries DOSEN PENGAMPU: \par}
     {\normalsize Yuni Rosita Dewi, M.Si. \par}
+    {\normalsize Dr. Heri Purnawan, S.Si., M.Si. \par}
     
     \vspace{1.5cm}
     
@@ -121,7 +128,17 @@ Berikut tujuan-tujuan spesifik yang ingin dicapai:
 
 Tiap molekul digambarkan sebagai graf $G = (V, E)$. Himpunan $V$ memuat seluruh atom yang berperan sebagai \textit{node}, sementara $E$ berisi ikatan kimia yang berfungsi sebagai \textit{edge}. Pembuatan struktur ini diserahkan kepada NetworkX (\texttt{nx.Graph}), yang secara internal sudah memakai \textit{adjacency list}.
 
-\textbf{Pertimbangan memilih \textit{adjacency list}}. Karakter dasar graf molekul adalah \textbf{sparse}. Tiap atom rata-rata hanya berhubungan dengan dua atom lain, sehingga \textit{degree}-nya berkisar di angka 2 saja. Jumlah ini jauh dari batas atas $n - 1$. Pada molekul QM9 yang umumnya beranggota 18 atom, sebuah \textit{adjacency matrix} $18 \times 18$ akan banyak terisi nol dan boros memori. Sebaliknya, \textit{adjacency list} hanya mencatat tetangga yang benar-benar tersambung. Ruang yang dibutuhkan pun mengecil, dari $O(|V|^2)$ menjadi $O(|V| + |E|)$.
+\textbf{Pertimbangan memilih \textit{adjacency list}}. Karakter dasar graf molekul adalah \textbf{sparse}. Tiap atom rata-rata hanya berhubungan dengan dua atom lain, sehingga \textit{degree}-nya berkisar di angka 2 saja. Jumlah ini jauh dari batas atas $n - 1$. Pada molekul QM9 yang jumlah atomnya tidak melebihi 29 (maksimal 9 atom berat plus hidrogen), sebuah \textit{adjacency matrix} $29 \times 29$ akan banyak terisi nol dan boros memori. Sebaliknya, \textit{adjacency list} hanya mencatat tetangga yang benar-benar tersambung. Ruang yang dibutuhkan pun mengecil, dari $O(|V|^2)$ menjadi $O(|V| + |E|)$.
+
+\textbf{Ilustrasi.} Molekul air H\textsubscript{2}O memiliki tiga atom (O, H, H) dan dua ikatan (O--H, O--H). Representasi \textit{adjacency list}-nya adalah:
+
+\begin{verbatim}
+    O : [H1, H2]
+    H1: [O]
+    H2: [O]
+\end{verbatim}
+
+Tiap entri hanya menyimpan tetangga yang sungguh-sungguh tersambung, sehingga total ruang yang dipakai cuma sebanyak $2|E|$ slot. Bandingkan dengan \textit{adjacency matrix} $3 \times 3$ yang akan memuat 9 sel, dan 5 di antaranya bernilai nol.
 
 \section{\textit{Hash Map} Indeks}
 
@@ -146,15 +163,23 @@ Selain ketiga \textit{hash map} indeks utama, sistem juga memanfaatkan beberapa 
     \item \texttt{ATOM\_COLORS} (di sisi \textit{frontend}): elemen $\to$ kode warna heksadesimal untuk pewarnaan tiap \textit{node}.
 \end{itemize}
 
+\section{\textit{Stack} pada \textit{Parser} SMILES}
+
+Saat sistem perlu menggambar molekul yang tidak ada dalam dataset (jalur \textit{fallback} pada Algoritma 6), notasi SMILES seperti \texttt{CC(C)O} harus dibedah satu per satu. Tantangannya muncul pada bagian \textit{branch} yang ditandai oleh tanda kurung. Setiap kali parser menjumpai \texttt{(}, atom acuan saat itu perlu disimpan agar nantinya bisa kembali ke titik tersebut ketika \texttt{)} ditemukan. Pola simpan dan ambil ulang dengan urutan terbalik ini cocok dijawab oleh struktur \textit{stack}.
+
+\textbf{Pertimbangan memilih \textit{stack}}. Sifat LIFO (\textit{last in, first out}) milik \textit{stack} sejalan dengan aturan \textit{branch} pada SMILES yang bersarang. Operasi \texttt{push} dan \texttt{pop} sama-sama berkompleksitas $O(1)$. Kalau dipaksa memakai \textit{queue} (FIFO), urutan kembalinya jadi salah dan struktur \textit{branch} tidak bisa direkonstruksi.
+
 \section{Cache Pickle (\textit{Lazy Load})}
 
 Cache yang disimpan di \texttt{cache.pkl} berstruktur \textit{hash map} dengan \texttt{mol\_id} sebagai kunci dan molekul lengkap (graf, tata letak 2D, beserta properti) sebagai nilainya. Pengisian cache berlangsung secara bertahap. Hanya molekul yang sempat dibuka oleh pengguna yang ditambahkan ke dalamnya. Saat pertama kali dipanggil, file \texttt{.xyz} terkait di-\textit{parse} dari \textit{disk}. Akses berikutnya untuk molekul yang serupa cukup mengambil dari memori, dengan kompleksitas $O(1)$.
 
 \textbf{Pertimbangan memilih pickle}. Pickle merupakan format biner bawaan Python yang proses \textit{serialize} dan \textit{deserialize}-nya cepat. Format ini juga akomodatif terhadap struktur data kompleks seperti objek bersarang dan \textit{numpy array}. Karena tidak menuntut definisi \textit{schema} secara eksplisit, format ini tergolong ringan untuk dipakai pada skala data sebesar ini.
 
+\textbf{Pertimbangan memilih \textit{lazy load}}. Pendekatan alternatifnya adalah \textit{eager precompute}, yaitu menghitung graf dan tata letak untuk seluruh 134 ribu molekul saat startup. Cara tersebut menjanjikan akses cepat untuk semua molekul, akan tetapi tiap kali aplikasi dinyalakan kembali, sistem harus menunggu beberapa menit dan menyimpan cache yang ukurannya bisa mencapai gigabyte. Padahal, dalam pemakaian nyata pengguna umumnya hanya membuka belasan molekul per sesi. Lewat \textit{lazy load}, biaya komputasi dibayar hanya ketika dibutuhkan. Konsekuensinya, hit pertama untuk satu molekul memang lebih lambat (40--60 ms), namun hit-hit berikutnya berjalan dalam orde milidetik berkat cache.
+
 \chapter{OUTPUT YANG DIHARAPKAN}
 
-Hasil akhir sistem berwujud aplikasi web yang dapat diakses melalui alamat \texttt{http://localhost:8000}. Tata letaknya dibagi dua. Sebelah kiri ditempati daftar molekul yang berfungsi sebagai sidebar, sedangkan panel sebelah kanan dipakai untuk menampilkan visualisasi graf 2D.
+Hasil akhir sistem berwujud aplikasi web yang dapat diakses melalui alamat \url{http://localhost:8000}. Tata letaknya dibagi dua. Sebelah kiri ditempati daftar molekul yang berfungsi sebagai sidebar, sedangkan panel sebelah kanan dipakai untuk menampilkan visualisasi graf 2D.
 
 \section{Antarmuka Utama}
 
@@ -168,12 +193,52 @@ Pada halaman utama, pengguna disuguhi daftar 133.885 molekul yang dibagi ke dala
 
 \section{Visualisasi Graf Molekul}
 
-Begitu pengguna memilih satu molekul tertentu, sistem segera menampilkan graf 2D-nya melalui \textit{library} Cytoscape.js. Tiap atom (\textit{node}) diberi warna sesuai elemen kimianya, dengan ketentuan C berwarna abu-abu, N biru, O merah, F hijau, serta H putih. Adapun setiap ikatan (\textit{edge}) digambarkan sebagai garis penghubung. Pengguna dapat melakukan zoom melalui \textit{scroll} dan menggeser tampilan dengan \textit{drag}. Pada panel di bawahnya, sistem turut menampilkan ke-16 properti kuantum yang dihasilkan dari perhitungan DFT.
+Begitu pengguna memilih satu molekul tertentu, sistem segera menampilkan graf 2D-nya melalui \textit{library} Cytoscape.js. Tiap atom (\textit{node}) diberi warna sesuai elemen kimianya, dengan ketentuan C berwarna abu-abu, N biru, O merah, F hijau, serta H putih. Adapun setiap ikatan (\textit{edge}) digambarkan sebagai garis penghubung. Pengguna dapat melakukan zoom melalui \textit{scroll} dan menggeser tampilan dengan \textit{drag}.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{figures/graf_molekul.png}
 \caption{Graf 2D molekul beserta panel properti kuantum.}
+\end{figure}
+
+Pada panel di bawah graf, sistem menampilkan ke-16 properti kuantum yang dihasilkan dari perhitungan DFT, mencakup energi orbital HOMO/LUMO, energi gap, momen dipol, polarisabilitas, hingga energi internal pada 0 K. Nilai-nilai ini diambil langsung dari hash map \texttt{meta} sehingga akses untuk satu molekul berlangsung dalam $O(1)$.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/properties_atom.png}
+\caption{Detail panel 16 properti kuantum dan daftar atom penyusun molekul.}
+\end{figure}
+
+\section{Pencarian Berlapis}
+
+Kolom pencarian mengakomodasi tiga jenis input yang sering dipakai: rumus kimia, notasi SMILES, dan substring nama atau \texttt{mol\_id}. Untuk rumus kimia seperti \texttt{H2O}, sistem mengembalikan seluruh molekul dengan formula tersebut. Pada notasi SMILES seperti \texttt{CCO}, hasil yang muncul adalah satu molekul yang persis cocok (etanol). Sedangkan substring dipakai sebagai jalur \textit{fallback} ketika dua tier sebelumnya \textit{miss}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/search_tier_1.png}
+\caption{Pencarian Tier 1: input formula \texttt{H2O} mengembalikan daftar molekul lewat hash map \texttt{formula\_idx}.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/search_tier_1b.png}
+\caption{Pencarian Tier 1b: input SMILES \texttt{CCO} mengembalikan satu molekul (etanol) lewat hash map \texttt{smiles\_idx}.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/search_tier_2.png}
+\caption{Pencarian Tier 2 (\textit{fallback}): substring pada \texttt{mol\_id} dipakai jika dua tier sebelumnya tidak cocok.}
+\end{figure}
+
+\section{\textit{Fallback} Render dari Notasi}
+
+Untuk molekul yang tidak tersedia di dataset, baik karena formulanya tidak alami (mis. \texttt{H2O9}) maupun SMILES sembarang yang ingin diuji oleh pengguna, sistem menyediakan tombol ``Render dari Notasi''. Hasilnya berupa graf sintetis yang dibangun dari parser SMILES (memakai stack untuk \textit{branch}) atau parser formula naif. Karena objek yang dihasilkan tidak punya koordinat 3D dan properti kuantum, panel propertinya kosong dan ditandai dengan flag \texttt{synthetic = True} disertai pesan peringatan.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/fallback_render.png}
+\caption{Mode \textit{fallback}: graf sintetis yang dirender dari notasi yang tidak ada di dataset.}
 \end{figure}
 
 \section{Mode Bandingkan}
@@ -193,10 +258,16 @@ Mengacu pada implementasi yang sudah berjalan, target performa sistem ditetapkan
 \begin{itemize}
     \item \textit{Startup} aplikasi: \textbf{kurang dari 1 detik} untuk memuat \texttt{index.json} berukuran 63 MB.
     \item Lookup berdasarkan ID, formula, atau SMILES: \textbf{$O(1)$}, hasil keluar dalam orde milidetik.
-    \item Pembukaan detail molekul untuk pertama kalinya: \textbf{20 sampai 80 ms}, mencakup proses parse \texttt{.xyz}, inferensi ikatan, dan perhitungan tata letak 2D.
-    \item Pembukaan detail molekul yang sama untuk kali kedua: \textbf{di bawah 5 ms}, sebab data sudah tersedia di cache.
+    \item Pembukaan detail molekul untuk pertama kalinya: \textbf{40 sampai 60 ms}, mencakup proses parse \texttt{.xyz}, inferensi ikatan, dan perhitungan tata letak 2D.
+    \item Pembukaan detail molekul yang sama untuk kali kedua: \textbf{di bawah 10 ms}, sebab data sudah tersedia di cache.
     \item \textit{Render fallback} dari SMILES: \textbf{30 sampai 100 ms}, bergantung ukuran molekul yang diinput.
 \end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{figures/network_perf.png}
+\caption{Bukti performa di tab Network DevTools. Hit pertama (cache miss) untuk molekul yang baru dibuka berkisar 40--60 ms, sedangkan hit ulang (cache hit) di bawah 10 ms.}
+\end{figure}
 
 \chapter{ALGORITMA / URUTAN PENGERJAAN}
 
@@ -223,11 +294,11 @@ Bab ini memaparkan algoritma utama yang dipakai sistem dalam format \textbf{inpu
 
 \textbf{Output}: Berkas \texttt{index.json} dengan ukuran sekitar 63 MB, siap dipakai oleh aplikasi.
 
-\textbf{Kompleksitas}: Waktu prosesnya sebesar $O(N \cdot k)$, dengan $N$ menyatakan jumlah file dan $k$ rata-rata ukuran header (konstan kecil). Pengukuran empiris menunjukkan proses ini selesai dalam waktu kurang lebih 3 detik untuk 133.885 file.
+\textbf{Kompleksitas}: Waktu prosesnya sebesar $O(N \cdot k)$, dengan $N$ menyatakan jumlah file dan $k$ rata-rata ukuran header (konstan kecil). Pengukuran empiris menunjukkan tahap pembangunan indeks selesai dalam waktu kurang lebih 3 detik untuk 133.885 file. Adapun total waktu \texttt{setup.py} secara keseluruhan, mencakup unduh dataset, ekstrak 134 ribu \texttt{.xyz}, dan pembuatan indeks, berkisar 41 detik.
 
 \section{Algoritma 2: Pencarian Molekul (\texttt{search})}
 
-\textbf{Input}: \textit{Query string} \texttt{q} yang dimasukkan pengguna, sebagai contoh \texttt{H2O}, \texttt{CCO}, atau \texttt{dsgdb9nsd\_000003}.
+\textbf{Input}: \textit{Query string} \texttt{q} yang dimasukkan pengguna, sebagai contoh \texttt{H2O}, \texttt{CCO}, atau \path{dsgdb9nsd_000003}.
 
 \textbf{Proses}:
 
@@ -349,10 +420,11 @@ python setup.py
 Setelah seluruh persiapan rampung, jalankan \textit{server} berikut:
 
 \begin{verbatim}
-backend/.venv/bin/uvicorn main:app --app-dir backend --port 8000
+backend/.venv/bin/uvicorn main:app \
+    --app-dir backend --port 8000
 \end{verbatim}
 
-Aplikasi siap diakses melalui \texttt{http://localhost:8000} pada peramban.
+Aplikasi siap diakses melalui \url{http://localhost:8000} pada peramban.
 
 \begin{thebibliography}{9}
 
@@ -372,11 +444,13 @@ Quantum chemistry structures and properties of 134 kilo molecules.
 Kamada, T., \& Kawai, S. (1989).
 An algorithm for drawing general undirected graphs.
 \textit{Information Processing Letters, 31}(1), 7--15.
+\url{https://doi.org/10.1016/0020-0190(89)90102-6}
 
 \bibitem{networkx}
 Hagberg, A. A., Schult, D. A., \& Swart, P. J. (2008).
 Exploring network structure, dynamics, and function using NetworkX.
 \textit{Proceedings of the 7th Python in Science Conference (SciPy)}, 11--15.
+\url{https://doi.org/10.25080/TCWV9851}
 
 \end{thebibliography}
 
