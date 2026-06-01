@@ -3,6 +3,7 @@
 # hasil parse di-cache ke pickle biar akses kedua langsung dari memori
 
 import pickle
+import re
 import threading
 from pathlib import Path
 import numpy as np
@@ -182,7 +183,6 @@ class QM9Dataset:
         # terima h2o, H2O, atau h₂o, normalisasi ke notasi Hill
         sub = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
         s = s.translate(sub).strip()
-        import re
         atoms = []
         for el, cnt in re.findall(r"([A-Za-z][a-z]?)(\d*)", s):
             if not el:
@@ -229,13 +229,6 @@ class QM9Dataset:
                 }
         self._stats_cached = out
         return out
-
-    @property
-    def molecules(self):
-        return [
-            {**m, "mol_id": mol_id}
-            for mol_id, m in self._index["meta"].items()
-        ]
 
 
 dataset = QM9Dataset()

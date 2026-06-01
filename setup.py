@@ -66,7 +66,9 @@ def install_deps():
     subprocess.check_call(
         [str(py), "-m", "pip", "install", "--upgrade", "pip", "--quiet"]
     )
-    subprocess.check_call([str(py), "-m", "pip", "install", "-r", str(req)])
+    info("install dependensi (silent, butuh beberapa detik)...")
+    subprocess.check_call([str(py), "-m", "pip", "install", "-r", str(req), "--quiet"])
+    info("deps terpasang")
 
 
 def download_dataset(force=False):
