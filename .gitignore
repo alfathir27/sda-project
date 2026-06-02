@@ -15,10 +15,6 @@ backend/uv.lock
 package.json
 package-lock.json
 
-# Claude Code
-.claude/
-CLAUDE.md
-
 # LaTeX build artifacts
 *.aux
 *.log
