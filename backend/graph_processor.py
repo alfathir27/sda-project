@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 from qm9_loader import COVALENT_RADII
 
-
+# inferensi ikatan
 def infer_bonds(atoms, coords, tolerance=0.45):
     n = len(atoms)
     bonds = []
@@ -10,6 +10,7 @@ def infer_bonds(atoms, coords, tolerance=0.45):
         for j in range(i + 1, n):
             r1 = COVALENT_RADII.get(atoms[i], 0.7)
             r2 = COVALENT_RADII.get(atoms[j], 0.7)
+            # euclidean
             dist = float(np.linalg.norm(coords[i] - coords[j]))
             if dist < (r1 + r2 + tolerance):
                 bonds.append((i, j, dist))
@@ -17,6 +18,7 @@ def infer_bonds(atoms, coords, tolerance=0.45):
 
 
 def compute_2d_layout(atoms, bonds, seed=42):
+    # representasi pada Adjacency List
     G = nx.Graph()
     for i, atom in enumerate(atoms):
         G.add_node(i, element=atom)
@@ -27,9 +29,10 @@ def compute_2d_layout(atoms, bonds, seed=42):
         return {0: (0.0, 0.0)}
 
     try:
+        # coba kamada kawal
         pos = nx.kamada_kawai_layout(G)
     except (nx.NetworkXError, ValueError):
-        # Kamada-Kawai gagal pada graf tidak terhubung — fallback ke Fruchterman-Reingold
+        # kamada kawai dadal, fallback ke fruchterman reingold
         pos = nx.spring_layout(G, seed=seed, k=2.0)
 
     xs = [p[0] for p in pos.values()]
