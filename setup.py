@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# setup awal: bikin venv, install deps, download + extract QM9, opsional build cache
+# setup awal: buat venv, install deps, download + extract QM9, opsional build cache
 # pakai: python setup.py
 
 import argparse
